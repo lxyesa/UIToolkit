@@ -29,15 +29,15 @@ public abstract class Control implements UIElement {
     protected int height;
 
     // Background texture (from a texture atlas) and source rectangle in the atlas
-    private Identifier background = null;
-    private int bgU = 0; // source x in texture atlas
-    private int bgV = 0; // source y in texture atlas
-    private int bgWidth = 0; // source width
-    private int bgHeight = 0; // source height
-    private int textureWidth = 256; // atlas width (default common size)
-    private int textureHeight = 256; // atlas height
-    private float bgAlpha = 1.0f; // background alpha (0..1)
-    private org.fish.uitoolkit.utils.TextureRegion bgRegion = null;
+    protected Identifier background = null;
+    protected int bgU = 0; // source x in texture atlas
+    protected int bgV = 0; // source y in texture atlas
+    protected int bgWidth = 0; // source width
+    protected int bgHeight = 0; // source height
+    protected int textureWidth = 256; // atlas width (default common size)
+    protected int textureHeight = 256; // atlas height
+    protected float bgAlpha = 1.0f; // background alpha (0..1)
+    protected org.fish.uitoolkit.utils.TextureRegion bgRegion = null;
 
     /**
      * 九宫格（9-slice）缩放策略。该枚举决定在控件目标尺寸与源图片（裁剪后）尺寸不一致时
@@ -58,8 +58,47 @@ public abstract class Control implements UIElement {
         CLAMPED
     }
 
-    /** 当前使用的九宫格缩放模式（默认：PROPORTIONAL）。 */
-    private NineSliceScaleMode nineSliceMode = NineSliceScaleMode.PROPORTIONAL;
+    /**
+     * 控制裁剪轴向：仅水平、仅垂直或同时裁剪。
+     */
+    public enum ClipAxis {
+        HORIZONTAL,
+        VERTICAL,
+        BOTH
+    }
+
+    /**
+     * 计算保留区域的像素尺寸（keepW, keepH），根据 drawW/drawH、裁剪比例 clip 和裁剪轴。
+     * 返回 int[]{ keepW, keepH }。
+     */
+    protected int[] computeKeepSizes(int drawW, int drawH, float clip, ClipAxis axis) {
+        int keepW = drawW;
+        int keepH = drawH;
+        if (clip <= 0f) {
+            keepW = 0;
+            keepH = 0;
+            return new int[] { keepW, keepH };
+        }
+        switch (axis) {
+            case HORIZONTAL:
+                keepW = Math.max(1, Math.round(drawW * clip));
+                break;
+            case VERTICAL:
+                keepH = Math.max(1, Math.round(drawH * clip));
+                break;
+            case BOTH:
+                keepW = Math.max(1, Math.round(drawW * clip));
+                keepH = Math.max(1, Math.round(drawH * clip));
+                break;
+            default:
+                keepW = Math.max(1, Math.round(drawW * clip));
+                keepH = Math.max(1, Math.round(drawH * clip));
+        }
+        return new int[] { keepW, keepH };
+    }
+
+    /** 当前使用的九宫格缩放模式（默认：MINIMUM）。 */
+    private NineSliceScaleMode nineSliceMode = NineSliceScaleMode.MINIMUM;
 
     /**
      * 当使用 MINIMUM 或 CLAMPED 模式时，角/边在目标上的最小像素厚度。
@@ -189,6 +228,24 @@ public abstract class Control implements UIElement {
     }
 
     /**
+     * 设置控件的可见性。
+     * 
+     * @param width 控件宽度（像素）
+     */
+    public void setWidth(int width) {
+        this.width = width;
+    }
+
+    /**
+     * 设置控件的高度。
+     * 
+     * @param height 控件高度（像素）
+     */
+    public void setHeight(int height) {
+        this.height = height;
+    }
+
+    /**
      * 设置控件外边距。
      *
      * @param left   左边距（像素）
@@ -257,6 +314,8 @@ public abstract class Control implements UIElement {
      */
     @Override
     public int getWidth() {
+        if (this.width > 0)
+            return this.width;
         return this.bgWidth > 0 ? this.bgWidth : 0;
     }
 
@@ -265,7 +324,174 @@ public abstract class Control implements UIElement {
      */
     @Override
     public int getHeight() {
+        if (this.height > 0)
+            return this.height;
         return this.bgHeight > 0 ? this.bgHeight : 0;
+    }
+
+    /**
+     * 返回控件相对于窗口/画布的中心 X 坐标（像素），基于锚点和本地坐标计算。
+     * 该方法使用父容器的定位信息（getParentX/Y/Width/Height）和锚点偏移
+     * （通过 getAnchoredX/getAnchoredY 计算绝对位置），然后再加上控件宽度的一半。
+     *
+     * @return 绝对中心 X（像素）
+     */
+    public int getCenterX() {
+        // 使用通用的 getX() 来避免重复计算父容器/锚点逻辑
+        int absX = getX();
+        return absX + (getWidth() / 2);
+    }
+
+    /**
+     * 返回控件相对于窗口/画布的中心 Y 坐标（像素）。
+     * 
+     * @return 绝对中心 Y（像素）
+     */
+    public int getCenterY() {
+        int absY = getY();
+        return absY + (getHeight() / 2);
+    }
+
+    /**
+     * 返回 {centerX, centerY} 的整型数组，便于一次性获取中心点。
+     */
+    public int[] getCenter() {
+        return new int[] { getCenterX(), getCenterY() };
+    }
+
+    /**
+     * 返回一个基于控件锚点并考虑缩放后的图像中心（绝对坐标）的整型数组 {centerX, centerY}。
+     *
+     * 该方法用于在不直接绘制图像的情况下计算当使用 drawTextureAtAnchorScaled
+     * （或等价计算）并传入给定源宽高与缩放倍数时，图像在窗口坐标系下的中心点位置。
+     *
+     * @param srcW  源图像宽度（像素）
+     * @param srcH  源图像高度（像素）
+     * @param scale 缩放倍数（1.0 = 原始大小）
+     * @return 长度为2的整型数组，索引0为 centerX，索引1为 centerY（窗口坐标）
+     */
+    public int[] getAnchorBasedCenter(int srcW, int srcH, float scale) {
+        float[] ctx = computeAnchorContext(srcW, srcH, scale, getHorizontalAnchor(), getVerticalAnchor());
+        float absX = ctx[0];
+        float absY = ctx[1];
+        int drawW = Math.round(ctx[2]);
+        int drawH = Math.round(ctx[3]);
+        float pivotLocalX = ctx[4];
+        float pivotLocalY = ctx[5];
+        float anchorFracX = ctx[6];
+        float anchorFracY = ctx[7];
+
+        int dx = Math.round(absX + pivotLocalX - drawW * anchorFracX);
+        int dy = Math.round(absY + pivotLocalY - drawH * anchorFracY);
+
+        int centerX = dx + (drawW / 2);
+        int centerY = dy + (drawH / 2);
+        return new int[] { centerX, centerY };
+    }
+
+    /**
+     * 返回用于锚点裁剪/布局的若干数值：
+     * { anchorWindowX, anchorWindowY, anchorFracX, anchorFracY, drawW, drawH }
+     * - anchorWindowX/Y: 控件内锚点在窗口坐标下的位置（像素）
+     * - anchorFracX/Y: 缩放后图像中被对齐点在图像内的相对位置（0..1）
+     * - drawW/drawH: 缩放后的图像像素尺寸
+     *
+     * 该方法为子类（例如 Image）提供按锚点计算裁剪区域所需的基础数据。
+     */
+    protected float[] getAnchorWindowAndFrac(int srcW, int srcH, float scale) {
+        float[] ctx = computeAnchorContext(srcW, srcH, scale, getHorizontalAnchor(), getVerticalAnchor());
+        float absX = ctx[0];
+        float absY = ctx[1];
+        float drawW = ctx[2];
+        float drawH = ctx[3];
+        float pivotLocalX = ctx[4];
+        float pivotLocalY = ctx[5];
+        float anchorFracX = ctx[6];
+        float anchorFracY = ctx[7];
+
+        float anchorWindowX = absX + pivotLocalX;
+        float anchorWindowY = absY + pivotLocalY;
+
+        return new float[] { anchorWindowX, anchorWindowY, anchorFracX, anchorFracY, drawW, drawH };
+    }
+
+    /**
+     * 统一计算与锚点/缩放相关的上下文值，减少重复计算。
+     * 返回数组：{ absX, absY, drawW, drawH, pivotLocalX, pivotLocalY, anchorFracX,
+     * anchorFracY }
+     */
+    protected float[] computeAnchorContext(int srcW, int srcH, float scale, HAnchor hAnchor, VAnchor vAnchor) {
+        int parentX = getParentX();
+        int parentY = getParentY();
+        int parentW = getParentWidth();
+        int parentH = getParentHeight();
+        int absX = getAnchoredX(parentX, parentY, parentW, parentH) + getLocalX();
+        int absY = getAnchoredY(parentX, parentY, parentW, parentH) + getLocalY();
+
+        int drawW = Math.max(1, Math.round(srcW * scale));
+        int drawH = Math.max(1, Math.round(srcH * scale));
+
+        float[] pf = computePivotAndFrac(hAnchor, vAnchor);
+        float pivotLocalX = pf[0];
+        float pivotLocalY = pf[1];
+        float anchorFracX = pf[2];
+        float anchorFracY = pf[3];
+
+        return new float[] { (float) absX, (float) absY, (float) drawW, (float) drawH, pivotLocalX, pivotLocalY,
+                anchorFracX, anchorFracY };
+    }
+
+    /**
+     * 返回控件的锚点在窗口坐标系下的整型坐标 {anchorX, anchorY}，便于上层直接使用整数像素值。
+     */
+    public int[] getAnchorPoint(int srcW, int srcH, float scale) {
+        float[] ctx = computeAnchorContext(srcW, srcH, scale, getHorizontalAnchor(), getVerticalAnchor());
+        int ax = Math.round(ctx[0] + ctx[4]);
+        int ay = Math.round(ctx[1] + ctx[5]);
+        return new int[] { ax, ay };
+    }
+
+    /**
+     * 在控件的锚点位置（即控件的绝对左上角）绘制按比例缩放的纹理。
+     *
+     * @param context  渲染上下文
+     * @param id       纹理标识
+     * @param srcU     源区域在图集中的 X
+     * @param srcV     源区域在图集中的 Y
+     * @param srcW     源区域宽度
+     * @param srcH     源区域高度
+     * @param scale    缩放倍数（1.0 = 原始大小）
+     * @param textureW 纹理图集宽度
+     * @param textureH 纹理图集高度
+     */
+    protected void drawTextureAtAnchorScaled(DrawContext context, Identifier id, int srcU, int srcV, int srcW,
+            int srcH, float scale, int textureW, int textureH) {
+        drawTextureAtAnchorScaled(context, id, srcU, srcV, srcW, srcH, scale, textureW, textureH, getHorizontalAnchor(),
+                getVerticalAnchor());
+    }
+
+    /**
+     * 在控件的锚点位置绘制按比例缩放的纹理，并允许指定用于缩放的锚点（水平/垂直）。
+     * 锚点决定缩放后的图像相对于控件本地坐标的对齐点（例如 CENTER 会以控件中心对齐）。
+     */
+    protected void drawTextureAtAnchorScaled(DrawContext context, Identifier id, int srcU, int srcV, int srcW,
+            int srcH, float scale, int textureW, int textureH, HAnchor hAnchor, VAnchor vAnchor) {
+        if (id == null || srcW <= 0 || srcH <= 0)
+            return;
+        float[] ctx = computeAnchorContext(srcW, srcH, scale, hAnchor, vAnchor);
+        float absX = ctx[0];
+        float absY = ctx[1];
+        int drawW = Math.round(ctx[2]);
+        int drawH = Math.round(ctx[3]);
+        float pivotLocalX = ctx[4];
+        float pivotLocalY = ctx[5];
+        float anchorFracX = ctx[6];
+        float anchorFracY = ctx[7];
+
+        int dx = Math.round(absX + pivotLocalX - drawW * anchorFracX);
+        int dy = Math.round(absY + pivotLocalY - drawH * anchorFracY);
+
+        context.drawTexture(id, dx, dy, drawW, drawH, srcU, srcV, srcW, srcH, textureW, textureH);
     }
 
     /**
@@ -403,16 +629,25 @@ public abstract class Control implements UIElement {
         if (this.background == null)
             return;
         try {
-            int drawW = width > 0 ? width : this.bgWidth;
-            int drawH = height > 0 ? height : this.bgHeight;
+            // 缓存常用字段到局部变量，减少多次字段访问
+            final Identifier localBackground = this.background;
+            final int localBgU = this.bgU;
+            final int localBgV = this.bgV;
+            final int localBgWidth = this.bgWidth;
+            final int localBgHeight = this.bgHeight;
+            final int localTextureW = this.textureWidth;
+            final int localTextureH = this.textureHeight;
+            final float localBgAlpha = this.bgAlpha;
+
+            int drawW = width > 0 ? width : localBgWidth;
+            int drawH = height > 0 ? height : localBgHeight;
             if (drawW <= 0 || drawH <= 0)
                 return;
-
             RenderSystem.enableBlend();
-            RenderSystem.setShaderColor(1f, 1f, 1f, this.bgAlpha);
+            RenderSystem.setShaderColor(1f, 1f, 1f, localBgAlpha);
 
-            int srcW = this.bgWidth > 0 ? this.bgWidth : drawW;
-            int srcH = this.bgHeight > 0 ? this.bgHeight : drawH;
+            int srcW = localBgWidth > 0 ? localBgWidth : drawW;
+            int srcH = localBgHeight > 0 ? localBgHeight : drawH;
 
             if (this.bgRegion != null && this.bgRegion.hasInsets()) {
                 int left = this.bgRegion.getInsetLeft();
@@ -428,35 +663,12 @@ public abstract class Control implements UIElement {
                 int dstRight;
                 int dstBottom;
 
-                java.util.function.BiFunction<Integer, Integer, Integer> compute = (inset, totalSrc) -> {
-                    if (inset <= 0)
-                        return 0;
-                    switch (this.nineSliceMode) {
-                        case NONE:
-                            return Math.min(inset, totalSrc);
-                        case PROPORTIONAL: {
-                            float scaleX = (float) drawW / (float) srcTotalW;
-                            int v = Math.max(1, Math.round(inset * scaleX));
-                            return v;
-                        }
-                        case MINIMUM:
-                            return Math.max(this.nineSliceMinPx, Math.min(inset, totalSrc));
-                        case CLAMPED: {
-                            float scale = (float) drawW / (float) srcTotalW;
-                            int v = Math.round(inset * scale);
-                            v = Math.max(this.nineSliceMinPx, v);
-                            v = Math.min(this.nineSliceMaxPx, Math.min(v, totalSrc));
-                            return v;
-                        }
-                        default:
-                            return Math.min(inset, totalSrc);
-                    }
-                };
-
-                dstLeft = Math.min(compute.apply(left, srcTotalW), drawW);
-                dstTop = Math.min(compute.apply(top, srcTotalH), drawH);
-                dstRight = Math.min(compute.apply(right, srcTotalW), drawW - dstLeft);
-                dstBottom = Math.min(compute.apply(bottom, srcTotalH), drawH - dstTop);
+                dstLeft = Math.min(computeInsetForMode(left, srcTotalW, drawW, srcTotalW), drawW);
+                dstTop = Math.min(computeInsetForMode(top, srcTotalH, drawH, srcTotalH), drawH);
+                dstRight = Math.min(computeInsetForMode(right, srcTotalW, drawW - dstLeft, srcTotalW),
+                        drawW - dstLeft);
+                dstBottom = Math.min(computeInsetForMode(bottom, srcTotalH, drawH - dstTop, srcTotalH),
+                        drawH - dstTop);
 
                 int dstCenterW = Math.max(0, drawW - dstLeft - dstRight);
                 int dstCenterH = Math.max(0, drawH - dstTop - dstBottom);
@@ -468,38 +680,72 @@ public abstract class Control implements UIElement {
                 int sy1 = sy0 + top;
                 int sy2 = sy0 + srcTotalH - bottom;
 
-                context.drawTexture(this.background, x, y, dstLeft, dstTop, sx0, sy0, left, top, this.textureWidth,
-                        this.textureHeight);
-                context.drawTexture(this.background, x + dstLeft + dstCenterW, y, dstRight, dstTop, sx2, sy0, right,
-                        top, this.textureWidth, this.textureHeight);
-                context.drawTexture(this.background, x, y + dstTop + dstCenterH, dstLeft, dstBottom, sx0, sy2, left,
-                        bottom, this.textureWidth, this.textureHeight);
-                context.drawTexture(this.background, x + dstLeft + dstCenterW, y + dstTop + dstCenterH, dstRight,
-                        dstBottom, sx2, sy2, right, bottom, this.textureWidth, this.textureHeight);
+                context.drawTexture(localBackground, x, y, dstLeft, dstTop, sx0, sy0, left, top, localTextureW,
+                        localTextureH);
+                context.drawTexture(localBackground, x + dstLeft + dstCenterW, y, dstRight, dstTop, sx2, sy0, right,
+                        top, localTextureW, localTextureH);
+                context.drawTexture(localBackground, x, y + dstTop + dstCenterH, dstLeft, dstBottom, sx0, sy2, left,
+                        bottom, localTextureW, localTextureH);
+                context.drawTexture(localBackground, x + dstLeft + dstCenterW, y + dstTop + dstCenterH, dstRight,
+                        dstBottom, sx2, sy2, right, bottom, localTextureW, localTextureH);
 
                 if (dstCenterW > 0)
-                    context.drawTexture(this.background, x + dstLeft, y, dstCenterW, dstTop, sx1, sy0,
-                            srcTotalW - left - right, top, this.textureWidth, this.textureHeight);
+                    context.drawTexture(localBackground, x + dstLeft, y, dstCenterW, dstTop, sx1, sy0,
+                            srcTotalW - left - right, top, localTextureW, localTextureH);
                 if (dstCenterW > 0)
-                    context.drawTexture(this.background, x + dstLeft, y + dstTop + dstCenterH, dstCenterW, dstBottom,
-                            sx1, sy2, srcTotalW - left - right, bottom, this.textureWidth, this.textureHeight);
+                    context.drawTexture(localBackground, x + dstLeft, y + dstTop + dstCenterH, dstCenterW, dstBottom,
+                            sx1, sy2, srcTotalW - left - right, bottom, localTextureW, localTextureH);
                 if (dstCenterH > 0)
-                    context.drawTexture(this.background, x, y + dstTop, dstLeft, dstCenterH, sx0, sy1, left,
-                            srcTotalH - top - bottom, this.textureWidth, this.textureHeight);
+                    context.drawTexture(localBackground, x, y + dstTop, dstLeft, dstCenterH, sx0, sy1, left,
+                            srcTotalH - top - bottom, localTextureW, localTextureH);
                 if (dstCenterH > 0)
-                    context.drawTexture(this.background, x + dstLeft + dstCenterW, y + dstTop, dstRight, dstCenterH,
-                            sx2, sy1, right, srcTotalH - top - bottom, this.textureWidth, this.textureHeight);
+                    context.drawTexture(localBackground, x + dstLeft + dstCenterW, y + dstTop, dstRight, dstCenterH,
+                            sx2, sy1, right, srcTotalH - top - bottom, localTextureW, localTextureH);
                 if (dstCenterW > 0 && dstCenterH > 0)
-                    context.drawTexture(this.background, x + dstLeft, y + dstTop, dstCenterW, dstCenterH, sx1, sy1,
-                            srcTotalW - left - right, srcTotalH - top - bottom, this.textureWidth, this.textureHeight);
+                    context.drawTexture(localBackground, x + dstLeft, y + dstTop, dstCenterW, dstCenterH, sx1, sy1,
+                            srcTotalW - left - right, srcTotalH - top - bottom, localTextureW, localTextureH);
             } else {
-                context.drawTexture(this.background, x, y, drawW, drawH, this.bgU, this.bgV, srcW, srcH,
-                        this.textureWidth, this.textureHeight);
+                context.drawTexture(localBackground, x, y, drawW, drawH, localBgU, localBgV, srcW, srcH,
+                        localTextureW, localTextureH);
             }
 
             RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
             RenderSystem.disableBlend();
         } catch (Throwable ignored) {
+        }
+    }
+
+    /**
+     * 计算九宫格缩放时目标像素的 inset（替代原来的 BiFunction 分配）。
+     *
+     * @param inset     源 inset
+     * @param totalSrc  源总宽/高
+     * @param drawSize  目标 draw 大小（可用来按比例缩放）
+     * @param srcTotalW 源总宽度（用于比例计算）
+     * @return 目标像素厚度
+     */
+    private int computeInsetForMode(int inset, int totalSrc, int drawSize, int srcTotalW) {
+        if (inset <= 0)
+            return 0;
+        switch (this.nineSliceMode) {
+            case NONE:
+                return Math.min(inset, totalSrc);
+            case PROPORTIONAL: {
+                float scaleX = (float) drawSize / (float) srcTotalW;
+                int v = Math.max(1, Math.round(inset * scaleX));
+                return v;
+            }
+            case MINIMUM:
+                return Math.max(this.nineSliceMinPx, Math.min(inset, totalSrc));
+            case CLAMPED: {
+                float scale = (float) drawSize / (float) srcTotalW;
+                int v = Math.round(inset * scale);
+                v = Math.max(this.nineSliceMinPx, v);
+                v = Math.min(this.nineSliceMaxPx, Math.min(v, totalSrc));
+                return v;
+            }
+            default:
+                return Math.min(inset, totalSrc);
         }
     }
 
@@ -510,5 +756,44 @@ public abstract class Control implements UIElement {
      */
     public void setChild(UIElement child) {
         this.child = child;
+    }
+
+    /**
+     * 私有辅助：基于水平/垂直锚点计算 pivotLocalX/pivotLocalY 与 anchor fraction X/Y。
+     * 返回数组：{ pivotLocalX, pivotLocalY, anchorFracX, anchorFracY }
+     */
+    private float[] computePivotAndFrac(HAnchor hAnchor, VAnchor vAnchor) {
+        float pivotLocalX;
+        switch (hAnchor) {
+            case RIGHT:
+                pivotLocalX = getWidth();
+                break;
+            case CENTER:
+                pivotLocalX = getWidth() / 2f;
+                break;
+            case LEFT:
+            default:
+                pivotLocalX = 0f;
+                break;
+        }
+
+        float pivotLocalY;
+        switch (vAnchor) {
+            case BOTTOM:
+                pivotLocalY = getHeight();
+                break;
+            case MIDDLE:
+                pivotLocalY = getHeight() / 2f;
+                break;
+            case TOP:
+            default:
+                pivotLocalY = 0f;
+                break;
+        }
+
+        float anchorFracX = (hAnchor == HAnchor.CENTER) ? 0.5f : (hAnchor == HAnchor.RIGHT ? 1f : 0f);
+        float anchorFracY = (vAnchor == VAnchor.MIDDLE) ? 0.5f : (vAnchor == VAnchor.BOTTOM ? 1f : 0f);
+
+        return new float[] { pivotLocalX, pivotLocalY, anchorFracX, anchorFracY };
     }
 }

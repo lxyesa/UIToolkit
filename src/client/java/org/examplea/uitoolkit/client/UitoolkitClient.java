@@ -1,8 +1,10 @@
 package org.examplea.uitoolkit.client;
 
 import org.fish.uitoolkit.Canvas;
+import org.fish.uitoolkit.Image;
 import org.fish.uitoolkit.Panel;
 import org.fish.uitoolkit.UIElement;
+import org.fish.uitoolkit.utils.Regions;
 import org.fish.uitoolkit.Control.NineSliceScaleMode;
 import org.fish.uitoolkit.Label;
 
@@ -18,22 +20,33 @@ public class UitoolkitClient implements ClientModInitializer {
         final Canvas canvas = new Canvas();
         final Panel panel = new Panel(canvas);
         final Label label = new Label(panel, "Hello, UIToolkit!");
+        final Image progress = new Image(canvas, Regions.WIDGET_PROGRESS_BORDER);
+        final Image progressFill = new Image(canvas, Regions.WIDGET_PROGRESS_FILL);
+
+        progressFill.setDrawMode(Image.DrawMode.SCALE);
+        progressFill.setClip(0.25f);
+        progressFill.setMargins(20);
+
+        progress.setDrawMode(Image.DrawMode.SCALE);
+        progress.setMargins(20);
+
         label.setColor(0xFF00FF00); // 设置文本颜色为绿色
         label.setMargins(10); // 设置文本边距
 
         panel.setHorizontalAnchor(UIElement.HAnchor.CENTER);
         panel.setNineSliceMode(NineSliceScaleMode.MINIMUM);
-        panel.setNineSliceMinPx(6);
+        panel.setNineSliceMinPx(8);
+        panel.setBackground(org.fish.uitoolkit.utils.Regions.WIDGET_PANEL);
 
         panel.addChild(label);
 
-        try {
-            panel.setBackground(org.fish.uitoolkit.utils.Regions.WIDGET_PANEL);
-        } catch (Throwable ignored) {
-        }
-
         HudRenderCallback.EVENT.register((context, tickDelta) -> {
             canvas.updateSizeFromWindow();
+            // 动态测试：让 progressFill 的 clip 在 0..1 范围内平滑往返
+            double periodMs = 3000.0; // 周期 3 秒
+            double phase = (System.currentTimeMillis() % (long) periodMs) / periodMs; // 0..1
+            float clip = (float) (0.5 * (1.0 + Math.sin(2.0 * Math.PI * phase)));
+            progressFill.setClip(clip);
             canvas.render(context, tickDelta);
         });
     }

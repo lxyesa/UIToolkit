@@ -1,5 +1,7 @@
 package org.fish.uitoolkit;
 
+import org.fish.uitoolkit.utils.Regions;
+
 /**
  * 简单的容器面板，作为一个可复用的 UI 容器。
  * <p>
@@ -15,10 +17,14 @@ public class Panel extends Container {
         this.y = y;
         this.width = width;
         this.height = height;
+
+        this.setBackground(Regions.WIDGET_PANEL);
     }
 
     public Panel(Object owner) {
         super(owner);
         this.owner = owner;
+
+        this.setBackground(Regions.WIDGET_PANEL);
     }
 }
