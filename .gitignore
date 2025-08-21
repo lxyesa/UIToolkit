@@ -1,0 +1,52 @@
+# Ignore all 'run' directories and their contents anywhere in the repository
+run/
+**/run/
+**/run/**
+
+# Ignore Gradle wrapper directory(s)
+gradle/
+**/gradle/
+**/gradle/**
+
+# Ignore Gradle cache/build directories
+.gradle/
+**/.gradle/
+**/.gradle/**
+
+# Ignore VS Code workspace/settings folders
+.vscode/
+**/.vscode/
+**/.vscode/**
+
+# Ignore common build/output directories
+build/
+**/build/
+**/build/**
+
+out/
+**/out/
+**/out/**
+
+target/
+**/target/
+**/target/**
+
+bin/
+**/bin/
+**/bin/**
+
+dist/
+**/dist/
+**/dist/**
+
+generated/
+**/generated/
+**/generated/**
+
+tmp/
+**/tmp/
+**/tmp/**
+
+classes/
+**/classes/
+**/classes/**

@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "id": "uitoolkit",
+  "version": "${version}",
+  "name": "UIToolkit",
+  "description": "",
+  "authors": [],
+  "contact": {},
+  "license": "All-Rights-Reserved",
+  "icon": "assets/uitoolkit/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "fabric-datagen": [
+      "org.examplea.uitoolkit.client.UitoolkitDataGenerator"
+    ],
+    "client": [
+      "org.examplea.uitoolkit.client.UitoolkitClient"
+    ],
+    "main": [
+      "org.examplea.uitoolkit.Uitoolkit"
+    ]
+  },
+  "mixins": [
+    "uitoolkit.mixins.json",
+    {
+      "config": "uitoolkit.client.mixins.json",
+      "environment": "client"
+    }
+  ],
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric": "*",
+    "minecraft": "${minecraft_version}"
+  }
+}
