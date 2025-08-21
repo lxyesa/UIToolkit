@@ -190,14 +190,14 @@ public class Image extends Control {
 
                     if (this.clip > 0f && this.clip < 1f) {
                         // 统一获取锚点相关上下文（避免重复计算）
-                        float[] ctx = computeAnchorContext(srcW, srcH, scaleToUse, getHorizontalAnchor(),
-                                getVerticalAnchor());
-                        int anchorX = Math.round(ctx[0] + ctx[4]);
-                        int anchorY = Math.round(ctx[1] + ctx[5]);
-                        float anchorFracX = ctx[6];
-                        float anchorFracY = ctx[7];
-                        int drawW = Math.max(1, Math.round(ctx[2]));
-                        int drawH = Math.max(1, Math.round(ctx[3]));
+                        org.fish.uitoolkit.Control.AnchorContext ctx = computeAnchorContext(srcW, srcH, scaleToUse,
+                                getHorizontalAnchor(), getVerticalAnchor());
+                        int anchorX = Math.round(ctx.absX + ctx.pivotLocalX);
+                        int anchorY = Math.round(ctx.absY + ctx.pivotLocalY);
+                        float anchorFracX = ctx.anchorFracX;
+                        float anchorFracY = ctx.anchorFracY;
+                        int drawW = Math.max(1, ctx.drawW);
+                        int drawH = Math.max(1, ctx.drawH);
 
                         // 计算要保留的像素大小，使用基类 computeKeepSizes
                         int[] keep = computeKeepSizes(drawW, drawH, this.clip, this.clipAxis);

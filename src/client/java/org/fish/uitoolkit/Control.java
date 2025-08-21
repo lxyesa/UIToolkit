@@ -16,8 +16,18 @@ public abstract class Control implements UIElement {
     protected Object child; // 用于存储单个子控件（如果有）
 
     // 缓存用于锚点/缩放位置计算的上下文，和失效标志
-    private float[] cachedAnchorCtx = null; // { absX, absY, drawW, drawH, pivotLocalX, pivotLocalY, anchorFracX,
-                                            // anchorFracY }
+    protected static final class AnchorContext {
+        public int absX;
+        public int absY;
+        public int drawW;
+        public int drawH;
+        public float pivotLocalX;
+        public float pivotLocalY;
+        public float anchorFracX;
+        public float anchorFracY;
+    }
+
+    private AnchorContext cachedAnchorCtx = null;
     private int cachedSrcW = 0;
     private int cachedSrcH = 0;
     private float cachedScale = 0f;
@@ -379,18 +389,12 @@ public abstract class Control implements UIElement {
      * @return 长度为2的整型数组，索引0为 centerX，索引1为 centerY（窗口坐标）
      */
     public int[] getAnchorBasedCenter(int srcW, int srcH, float scale) {
-        float[] ctx = computeAnchorContext(srcW, srcH, scale, getHorizontalAnchor(), getVerticalAnchor());
-        float absX = ctx[0];
-        float absY = ctx[1];
-        int drawW = Math.round(ctx[2]);
-        int drawH = Math.round(ctx[3]);
-        float pivotLocalX = ctx[4];
-        float pivotLocalY = ctx[5];
-        float anchorFracX = ctx[6];
-        float anchorFracY = ctx[7];
+        AnchorContext ctx = computeAnchorContext(srcW, srcH, scale, getHorizontalAnchor(), getVerticalAnchor());
+        int drawW = ctx.drawW;
+        int drawH = ctx.drawH;
 
-        int dx = Math.round(absX + pivotLocalX - drawW * anchorFracX);
-        int dy = Math.round(absY + pivotLocalY - drawH * anchorFracY);
+        int dx = Math.round(ctx.absX + ctx.pivotLocalX - drawW * ctx.anchorFracX);
+        int dy = Math.round(ctx.absY + ctx.pivotLocalY - drawH * ctx.anchorFracY);
 
         int centerX = dx + (drawW / 2);
         int centerY = dy + (drawH / 2);
@@ -406,21 +410,8 @@ public abstract class Control implements UIElement {
      *
      * 该方法为子类（例如 Image）提供按锚点计算裁剪区域所需的基础数据。
      */
-    protected float[] getAnchorWindowAndFrac(int srcW, int srcH, float scale) {
-        float[] ctx = computeAnchorContext(srcW, srcH, scale, getHorizontalAnchor(), getVerticalAnchor());
-        float absX = ctx[0];
-        float absY = ctx[1];
-        float drawW = ctx[2];
-        float drawH = ctx[3];
-        float pivotLocalX = ctx[4];
-        float pivotLocalY = ctx[5];
-        float anchorFracX = ctx[6];
-        float anchorFracY = ctx[7];
-
-        float anchorWindowX = absX + pivotLocalX;
-        float anchorWindowY = absY + pivotLocalY;
-
-        return new float[] { anchorWindowX, anchorWindowY, anchorFracX, anchorFracY, drawW, drawH };
+    protected AnchorContext getAnchorWindowAndFrac(int srcW, int srcH, float scale) {
+        return computeAnchorContext(srcW, srcH, scale, getHorizontalAnchor(), getVerticalAnchor());
     }
 
     /**
@@ -428,7 +419,8 @@ public abstract class Control implements UIElement {
      * 返回数组：{ absX, absY, drawW, drawH, pivotLocalX, pivotLocalY, anchorFracX,
      * anchorFracY }
      */
-    protected float[] computeAnchorContext(int srcW, int srcH, float scale, HAnchor hAnchor, VAnchor vAnchor) {
+    protected AnchorContext computeAnchorContext(int srcW, int srcH, float scale, HAnchor hAnchor,
+            VAnchor vAnchor) {
         // 如果缓存有效且参数未改变，则直接返回缓存
         if (!anchorCtxDirty && cachedAnchorCtx != null && cachedSrcW == srcW && cachedSrcH == srcH
                 && Float.compare(cachedScale, scale) == 0 && cachedHAnchor == hAnchor && cachedVAnchor == vAnchor) {
@@ -451,8 +443,15 @@ public abstract class Control implements UIElement {
         float anchorFracX = pf[2];
         float anchorFracY = pf[3];
 
-        float[] result = new float[] { (float) absX, (float) absY, (float) drawW, (float) drawH, pivotLocalX,
-                pivotLocalY, anchorFracX, anchorFracY };
+        AnchorContext result = this.cachedAnchorCtx != null ? this.cachedAnchorCtx : new AnchorContext();
+        result.absX = absX;
+        result.absY = absY;
+        result.drawW = drawW;
+        result.drawH = drawH;
+        result.pivotLocalX = pivotLocalX;
+        result.pivotLocalY = pivotLocalY;
+        result.anchorFracX = anchorFracX;
+        result.anchorFracY = anchorFracY;
 
         // 更新缓存
         this.cachedAnchorCtx = result;
@@ -470,9 +469,9 @@ public abstract class Control implements UIElement {
      * 返回控件的锚点在窗口坐标系下的整型坐标 {anchorX, anchorY}，便于上层直接使用整数像素值。
      */
     public int[] getAnchorPoint(int srcW, int srcH, float scale) {
-        float[] ctx = computeAnchorContext(srcW, srcH, scale, getHorizontalAnchor(), getVerticalAnchor());
-        int ax = Math.round(ctx[0] + ctx[4]);
-        int ay = Math.round(ctx[1] + ctx[5]);
+        AnchorContext ctx = computeAnchorContext(srcW, srcH, scale, getHorizontalAnchor(), getVerticalAnchor());
+        int ax = Math.round(ctx.absX + ctx.pivotLocalX);
+        int ay = Math.round(ctx.absY + ctx.pivotLocalY);
         return new int[] { ax, ay };
     }
 
@@ -503,18 +502,11 @@ public abstract class Control implements UIElement {
             int srcH, float scale, int textureW, int textureH, HAnchor hAnchor, VAnchor vAnchor) {
         if (id == null || srcW <= 0 || srcH <= 0)
             return;
-        float[] ctx = computeAnchorContext(srcW, srcH, scale, hAnchor, vAnchor);
-        float absX = ctx[0];
-        float absY = ctx[1];
-        int drawW = Math.round(ctx[2]);
-        int drawH = Math.round(ctx[3]);
-        float pivotLocalX = ctx[4];
-        float pivotLocalY = ctx[5];
-        float anchorFracX = ctx[6];
-        float anchorFracY = ctx[7];
-
-        int dx = Math.round(absX + pivotLocalX - drawW * anchorFracX);
-        int dy = Math.round(absY + pivotLocalY - drawH * anchorFracY);
+        AnchorContext ctx = computeAnchorContext(srcW, srcH, scale, hAnchor, vAnchor);
+        int drawW = ctx.drawW;
+        int drawH = ctx.drawH;
+        int dx = Math.round(ctx.absX + ctx.pivotLocalX - drawW * ctx.anchorFracX);
+        int dy = Math.round(ctx.absY + ctx.pivotLocalY - drawH * ctx.anchorFracY);
 
         context.drawTexture(id, dx, dy, drawW, drawH, srcU, srcV, srcW, srcH, textureW, textureH);
     }
