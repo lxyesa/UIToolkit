@@ -157,24 +157,19 @@ public class RichTextBlock extends Control {
     }
 
     public void setPosition(int x, int y) {
-    super.setPosition(x, y);
+        super.setPosition(x, y);
     }
 
     public void setHorizontalAnchor(UIElement.HAnchor a) {
-    super.setHorizontalAnchor(a);
+        super.setHorizontalAnchor(a);
     }
 
     public void setVerticalAnchor(UIElement.VAnchor a) {
-    super.setVerticalAnchor(a);
+        super.setVerticalAnchor(a);
     }
 
     public void setMargins(int left, int top, int right, int bottom) {
-    super.setMargins(left, top, right, bottom);
-    }
-
-    @Override
-    public Object getOwner() {
-    return super.getOwner();
+        super.setMargins(left, top, right, bottom);
     }
 
     @Override
@@ -214,16 +209,6 @@ public class RichTextBlock extends Control {
     }
 
     @Override
-    public int getLocalX() {
-        return x;
-    }
-
-    @Override
-    public int getLocalY() {
-        return y;
-    }
-
-    @Override
     public int getWidth() {
         TextRenderer tr = MinecraftClient.getInstance().textRenderer;
         if (tr == null)
@@ -234,7 +219,7 @@ public class RichTextBlock extends Control {
             if (w > max)
                 max = w;
         }
-        return max + marginLeft + marginRight;
+        return max + super.getMarginLeft() + super.getMarginRight();
     }
 
     @Override
@@ -245,41 +230,9 @@ public class RichTextBlock extends Control {
         int linesCount = Math.max(0, lines.size());
         if (linesCount == 0)
             return 0;
-        return linesCount * tr.fontHeight + (linesCount - 1) * lineSpacing + marginTop + marginBottom;
+        return linesCount * tr.fontHeight + (linesCount - 1) * lineSpacing + super.getMarginTop()
+                + super.getMarginBottom();
     }
 
-    @Override
-    public boolean isVisible() {
-        return true;
-    }
-
-    @Override
-    public UIElement.HAnchor getHorizontalAnchor() {
-        return hAnchor;
-    }
-
-    @Override
-    public UIElement.VAnchor getVerticalAnchor() {
-        return vAnchor;
-    }
-
-    @Override
-    public int getMarginLeft() {
-        return marginLeft;
-    }
-
-    @Override
-    public int getMarginRight() {
-        return marginRight;
-    }
-
-    @Override
-    public int getMarginTop() {
-        return marginTop;
-    }
-
-    @Override
-    public int getMarginBottom() {
-        return marginBottom;
-    }
+    // 使用 Control/默认实现提供的行为（不再冗余覆写）
 }

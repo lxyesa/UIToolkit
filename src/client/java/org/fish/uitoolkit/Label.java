@@ -16,59 +16,80 @@ public class Label extends Control {
     private boolean shadow = true;
     private boolean centered = false; // 水平居中
 
+    /**
+     * 创建一个新的标签控件。
+     * 
+     * @param owner 控件的所有者，通常是一个 {@link Canvas} 或 {@link Panel}。
+     * @param text  标签文本内容，不能为空。
+     */
     public Label(Object owner, String text) {
         super(owner);
         this.text = Text.literal(text);
     }
 
+    /**
+     * 创建一个新的标签控件。
+     * 
+     * @param owner 控件的所有者，通常是一个 {@link Canvas} 或 {@link Panel}。
+     * @param text  标签文本内容，不能为空。
+     */
     public Label(Object owner, Text text) {
         super(owner);
         this.text = text != null ? text : Text.empty();
     }
 
+    /**
+     * 设置标签文本内容。
+     * 
+     * @param text 文本内容，可以为 null，此时将设置为空文本。
+     */
     public void setText(String text) {
         setText(Text.literal(text));
     }
 
+    /**
+     * 设置标签文本内容。
+     * 
+     * @param text 文本内容，可以为 null，此时将设置为空文本。
+     */
     public void setText(Text text) {
         this.text = text != null ? text : Text.empty();
     }
 
+    /**
+     * 获取当前标签文本内容。
+     * 
+     * @return 当前标签文本内容
+     */
     public Text getText() {
         return text;
     }
 
+    /**
+     * 设置文本颜色。
+     * 
+     * @param color 颜色值，格式为 ARGB（Alpha, Red, Green, Blue）
+     */
     public void setColor(int color) {
         this.color = color;
     }
 
+    /**
+     * 获取当前文本颜色。
+     * 
+     * @param shadow 是否启用阴影
+     */
     public void setShadow(boolean shadow) {
         this.shadow = shadow;
     }
 
+    /**
+     * 设置文本是否水平居中。
+     * 
+     * @param centered 如果为 true，则文本将水平居中显示；否则左对齐。
+     */
     public void setCentered(boolean centered) {
         this.centered = centered;
-    }
-
-    public void setPosition(int x, int y) {
-        super.setPosition(x, y);
-    }
-
-    public void setHorizontalAnchor(HAnchor a) {
-        super.setHorizontalAnchor(a);
-    }
-
-    public void setVerticalAnchor(VAnchor a) {
-        super.setVerticalAnchor(a);
-    }
-
-    public void setMargins(int left, int top, int right, int bottom) {
-        super.setMargins(left, top, right, bottom);
-    }
-
-    @Override
-    public Object getOwner() {
-        return super.getOwner();
     }
 
     @Override
@@ -91,16 +112,6 @@ public class Label extends Control {
     }
 
     @Override
-    public int getLocalX() {
-        return x;
-    }
-
-    @Override
-    public int getLocalY() {
-        return y;
-    }
-
-    @Override
     public int getWidth() {
         TextRenderer tr = MinecraftClient.getInstance().textRenderer;
         return tr != null ? tr.getWidth(text) : 0;
@@ -111,40 +122,4 @@ public class Label extends Control {
         TextRenderer tr = MinecraftClient.getInstance().textRenderer;
         return tr != null ? tr.fontHeight : 9;
     }
-
-    @Override
-    public boolean isVisible() {
-        return true;
-    }
-
-    @Override
-    public HAnchor getHorizontalAnchor() {
-        return hAnchor;
-    }
-
-    @Override
-    public VAnchor getVerticalAnchor() {
-        return vAnchor;
-    }
-
-    @Override
-    public int getMarginLeft() {
-        return marginLeft;
-    }
-
-    @Override
-    public int getMarginRight() {
-        return marginRight;
-    }
-
-    @Override
-    public int getMarginTop() {
-        return marginTop;
-    }
-
-    @Override
-    public int getMarginBottom() {
-        return marginBottom;
-    }
-
 }

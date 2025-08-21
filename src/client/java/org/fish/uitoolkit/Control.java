@@ -33,6 +33,10 @@ public abstract class Control implements UIElement {
     private float cachedScale = 0f;
     private HAnchor cachedHAnchor = null;
     private VAnchor cachedVAnchor = null;
+    private int cachedParentX = Integer.MIN_VALUE;
+    private int cachedParentY = Integer.MIN_VALUE;
+    private int cachedParentW = Integer.MIN_VALUE;
+    private int cachedParentH = Integer.MIN_VALUE;
     private boolean anchorCtxDirty = true;
 
     // 基础控件属性：位置、锚点、margin、可见性
@@ -44,6 +48,11 @@ public abstract class Control implements UIElement {
     protected int marginRight = 0;
     protected int marginTop = 0;
     protected int marginBottom = 0;
+    // 相对边距（百分比，基于父内容宽度/高度）；NaN 表示未设置（使用绝对像素）
+    protected float marginLeftRel = Float.NaN;
+    protected float marginRightRel = Float.NaN;
+    protected float marginTopRel = Float.NaN;
+    protected float marginBottomRel = Float.NaN;
     protected boolean visible = true;
     protected int width;
     protected int height;
@@ -174,6 +183,13 @@ public abstract class Control implements UIElement {
     }
 
     /**
+     * 手动失效锚点缓存，当外部（例如容器）检测到父大小变化时可调用。
+     */
+    protected void invalidateAnchorContext() {
+        this.anchorCtxDirty = true;
+    }
+
+    /**
      * 设置控件的本地坐标。
      *
      * @param x 本地 x 坐标（像素）
@@ -230,6 +246,39 @@ public abstract class Control implements UIElement {
         this.marginTop = top;
         this.marginRight = right;
         this.marginBottom = bottom;
+        // 清除相对边距（以绝对像素为准）
+        this.marginLeftRel = Float.NaN;
+        this.marginTopRel = Float.NaN;
+        this.marginRightRel = Float.NaN;
+        this.marginBottomRel = Float.NaN;
+        this.anchorCtxDirty = true;
+    }
+
+    /** 设置单个绝对像素边距：左 */
+    public void setMarginLeft(int px) {
+        this.marginLeft = px;
+        this.marginLeftRel = Float.NaN;
+        this.anchorCtxDirty = true;
+    }
+
+    /** 设置单个绝对像素边距：右 */
+    public void setMarginRight(int px) {
+        this.marginRight = px;
+        this.marginRightRel = Float.NaN;
+        this.anchorCtxDirty = true;
+    }
+
+    /** 设置单个绝对像素边距：上 */
+    public void setMarginTop(int px) {
+        this.marginTop = px;
+        this.marginTopRel = Float.NaN;
+        this.anchorCtxDirty = true;
+    }
+
+    /** 设置单个绝对像素边距：下 */
+    public void setMarginBottom(int px) {
+        this.marginBottom = px;
+        this.marginBottomRel = Float.NaN;
         this.anchorCtxDirty = true;
     }
 
@@ -240,6 +289,43 @@ public abstract class Control implements UIElement {
      */
     public void setMargins(int all) {
         setMargins(all, all, all, all);
+    }
+
+    /**
+     * 使用相对比例设置边距（以父内容区宽度/高度为基准）。
+     * 例如：setMarginsRelative(0f, 0f, 0.15f, 0.05f) 表示右侧为父宽度的 15%，底部为父高度的 5%。
+     * 值应在 0..1 范围内；使用 Float.NaN 可表示未设置（保留绝对像素）。
+     */
+    public void setMarginsRelative(float leftPct, float topPct, float rightPct, float bottomPct) {
+        this.marginLeftRel = leftPct;
+        this.marginTopRel = topPct;
+        this.marginRightRel = rightPct;
+        this.marginBottomRel = bottomPct;
+        this.anchorCtxDirty = true;
+    }
+
+    /** 设置单个相对边距（百分比，基于父内容区）：左 */
+    public void setMarginLeftPercent(float pct) {
+        this.marginLeftRel = pct;
+        this.anchorCtxDirty = true;
+    }
+
+    /** 设置单个相对边距（百分比，基于父内容区）：右 */
+    public void setMarginRightPercent(float pct) {
+        this.marginRightRel = pct;
+        this.anchorCtxDirty = true;
+    }
+
+    /** 设置单个相对边距（百分比，基于父内容区）：上 */
+    public void setMarginTopPercent(float pct) {
+        this.marginTopRel = pct;
+        this.anchorCtxDirty = true;
+    }
+
+    /** 设置单个相对边距（百分比，基于父内容区）：下 */
+    public void setMarginBottomPercent(float pct) {
+        this.marginBottomRel = pct;
+        this.anchorCtxDirty = true;
     }
 
     /**
@@ -309,21 +395,45 @@ public abstract class Control implements UIElement {
 
     @Override
     public int getMarginLeft() {
+        if (!Float.isNaN(marginLeftRel)) {
+            int parentW = getParentWidth();
+            if (parentW <= 0)
+                return marginLeft; // fallback
+            return Math.round(parentW * marginLeftRel);
+        }
         return marginLeft;
     }
 
     @Override
     public int getMarginRight() {
+        if (!Float.isNaN(marginRightRel)) {
+            int parentW = getParentWidth();
+            if (parentW <= 0)
+                return marginRight;
+            return Math.round(parentW * marginRightRel);
+        }
         return marginRight;
     }
 
     @Override
     public int getMarginTop() {
+        if (!Float.isNaN(marginTopRel)) {
+            int parentH = getParentHeight();
+            if (parentH <= 0)
+                return marginTop;
+            return Math.round(parentH * marginTopRel);
+        }
         return marginTop;
     }
 
     @Override
     public int getMarginBottom() {
+        if (!Float.isNaN(marginBottomRel)) {
+            int parentH = getParentHeight();
+            if (parentH <= 0)
+                return marginBottom;
+            return Math.round(parentH * marginBottomRel);
+        }
         return marginBottom;
     }
 
@@ -421,16 +531,19 @@ public abstract class Control implements UIElement {
      */
     protected AnchorContext computeAnchorContext(int srcW, int srcH, float scale, HAnchor hAnchor,
             VAnchor vAnchor) {
-        // 如果缓存有效且参数未改变，则直接返回缓存
-        if (!anchorCtxDirty && cachedAnchorCtx != null && cachedSrcW == srcW && cachedSrcH == srcH
-                && Float.compare(cachedScale, scale) == 0 && cachedHAnchor == hAnchor && cachedVAnchor == vAnchor) {
-            return cachedAnchorCtx;
-        }
-
+        // 先读取父容器信息，因为缓存也应依赖于父容器的位置/尺寸
         int parentX = getParentX();
         int parentY = getParentY();
         int parentW = getParentWidth();
         int parentH = getParentHeight();
+
+        // 如果缓存有效且参数与父容器状态未改变，则直接返回缓存
+        if (!anchorCtxDirty && cachedAnchorCtx != null && cachedSrcW == srcW && cachedSrcH == srcH
+                && Float.compare(cachedScale, scale) == 0 && cachedHAnchor == hAnchor && cachedVAnchor == vAnchor
+                && cachedParentX == parentX && cachedParentY == parentY && cachedParentW == parentW
+                && cachedParentH == parentH) {
+            return cachedAnchorCtx;
+        }
         int absX = getAnchoredX(parentX, parentY, parentW, parentH) + getLocalX();
         int absY = getAnchoredY(parentX, parentY, parentW, parentH) + getLocalY();
 
@@ -460,6 +573,10 @@ public abstract class Control implements UIElement {
         this.cachedScale = scale;
         this.cachedHAnchor = hAnchor;
         this.cachedVAnchor = vAnchor;
+        this.cachedParentX = parentX;
+        this.cachedParentY = parentY;
+        this.cachedParentW = parentW;
+        this.cachedParentH = parentH;
         this.anchorCtxDirty = false;
 
         return result;

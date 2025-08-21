@@ -33,13 +33,33 @@ public class Canvas extends Container {
     public void updateSizeFromWindow() {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null || client.getWindow() == null) {
+            int oldW = this.width;
+            int oldH = this.height;
             this.width = 0;
             this.height = 0;
+            if (oldW != this.width || oldH != this.height) {
+                // 父尺寸变化：通知子控件失效其锚点缓存
+                for (UIElement child : getChildren()) {
+                    if (child instanceof Control) {
+                        ((Control) child).invalidateAnchorContext();
+                    }
+                }
+            }
             return;
         }
         // getScaledWidth/Height 已考虑窗口缩放（DPI）
-        this.width = client.getWindow().getScaledWidth();
-        this.height = client.getWindow().getScaledHeight();
+        int newW = client.getWindow().getScaledWidth();
+        int newH = client.getWindow().getScaledHeight();
+        if (newW != this.width || newH != this.height) {
+            this.width = newW;
+            this.height = newH;
+            // 父尺寸变化：通知子控件失效其锚点缓存
+            for (UIElement child : getChildren()) {
+                if (child instanceof Control) {
+                    ((Control) child).invalidateAnchorContext();
+                }
+            }
+        }
     }
 
     public int getWidth() {

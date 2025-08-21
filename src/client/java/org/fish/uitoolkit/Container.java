@@ -35,6 +35,10 @@ public class Container extends Control {
     public Container addChild(UIElement child) {
         if (child != null)
             children.add(child);
+        // 新增：当有结构性变更（添加子节点）时，通知该子及其后代失效锚点缓存
+        if (child instanceof Control) {
+            ((Control) child).invalidateAnchorContext();
+        }
         return this;
     }
 
@@ -45,7 +49,14 @@ public class Container extends Control {
      * @return 如果列表中存在并被移除则返回 true，否则返回 false
      */
     public boolean removeChild(UIElement child) {
-        return children.remove(child);
+        boolean r = children.remove(child);
+        if (r) {
+            // 移除子项也可能影响布局：失效其后代缓存
+            if (child instanceof Control) {
+                ((Control) child).invalidateAnchorContext();
+            }
+        }
+        return r;
     }
 
     /**
@@ -70,11 +81,40 @@ public class Container extends Control {
         this.paddingTop = top;
         this.paddingRight = right;
         this.paddingBottom = bottom;
+        // padding 变化会影响子元素锚定参考区，通知子控件失效
+        propagateInvalidateChildren();
     }
 
     /** 设置统一内边距 */
     public void setPadding(int pad) {
         setPadding(pad, pad, pad, pad);
+    }
+
+    /**
+     * 递归通知所有子控件及其后代失效锚点缓存。
+     * 当容器的位置/尺寸/内边距发生变化时应调用此方法。
+     */
+    protected void propagateInvalidateChildren() {
+        for (UIElement child : children) {
+            if (child instanceof Control) {
+                ((Control) child).invalidateAnchorContext();
+            }
+            if (child instanceof Container) {
+                ((Container) child).propagateInvalidateChildren();
+            }
+        }
+    }
+
+    @Override
+    public void setPosition(int x, int y) {
+        super.setPosition(x, y);
+        propagateInvalidateChildren();
+    }
+
+    @Override
+    public void setSize(int width, int height) {
+        super.setSize(width, height);
+        propagateInvalidateChildren();
     }
 
     public int getPaddingLeft() {
