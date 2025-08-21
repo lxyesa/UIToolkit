@@ -15,6 +15,16 @@ public abstract class Control implements UIElement {
     protected Object owner;
     protected Object child; // 用于存储单个子控件（如果有）
 
+    // 缓存用于锚点/缩放位置计算的上下文，和失效标志
+    private float[] cachedAnchorCtx = null; // { absX, absY, drawW, drawH, pivotLocalX, pivotLocalY, anchorFracX,
+                                            // anchorFracY }
+    private int cachedSrcW = 0;
+    private int cachedSrcH = 0;
+    private float cachedScale = 0f;
+    private HAnchor cachedHAnchor = null;
+    private VAnchor cachedVAnchor = null;
+    private boolean anchorCtxDirty = true;
+
     // 基础控件属性：位置、锚点、margin、可见性
     protected int x = 0;
     protected int y = 0;
@@ -150,6 +160,7 @@ public abstract class Control implements UIElement {
      */
     public void setOwner(Object owner) {
         this.owner = owner;
+        this.anchorCtxDirty = true;
     }
 
     /**
@@ -161,6 +172,7 @@ public abstract class Control implements UIElement {
     public void setPosition(int x, int y) {
         this.x = x;
         this.y = y;
+        this.anchorCtxDirty = true;
     }
 
     /**
@@ -172,6 +184,7 @@ public abstract class Control implements UIElement {
     public void setSize(int width, int height) {
         this.width = width;
         this.height = height;
+        this.anchorCtxDirty = true;
     }
 
     /**
@@ -181,6 +194,7 @@ public abstract class Control implements UIElement {
      */
     public void setHorizontalAnchor(HAnchor a) {
         this.hAnchor = a;
+        this.anchorCtxDirty = true;
     }
 
     /**
@@ -190,6 +204,7 @@ public abstract class Control implements UIElement {
      */
     public void setVerticalAnchor(VAnchor a) {
         this.vAnchor = a;
+        this.anchorCtxDirty = true;
     }
 
     /**
@@ -205,17 +220,7 @@ public abstract class Control implements UIElement {
         this.marginTop = top;
         this.marginRight = right;
         this.marginBottom = bottom;
-        // 如果 owner 有 invalidateLayout 方法，则通知其重新布局（例如 StackPanel）
-        if (this.owner != null) {
-            try {
-                java.lang.reflect.Method m = this.owner.getClass().getMethod("invalidateLayout");
-                if (m != null) {
-                    m.setAccessible(true);
-                    m.invoke(this.owner);
-                }
-            } catch (Throwable ignored) {
-            }
-        }
+        this.anchorCtxDirty = true;
     }
 
     /**
@@ -234,6 +239,7 @@ public abstract class Control implements UIElement {
      */
     public void setWidth(int width) {
         this.width = width;
+        this.anchorCtxDirty = true;
     }
 
     /**
@@ -243,6 +249,7 @@ public abstract class Control implements UIElement {
      */
     public void setHeight(int height) {
         this.height = height;
+        this.anchorCtxDirty = true;
     }
 
     /**
@@ -256,6 +263,7 @@ public abstract class Control implements UIElement {
 
     public void setVisible(boolean v) {
         this.visible = v;
+        this.anchorCtxDirty = true;
     }
 
     /**
@@ -421,6 +429,12 @@ public abstract class Control implements UIElement {
      * anchorFracY }
      */
     protected float[] computeAnchorContext(int srcW, int srcH, float scale, HAnchor hAnchor, VAnchor vAnchor) {
+        // 如果缓存有效且参数未改变，则直接返回缓存
+        if (!anchorCtxDirty && cachedAnchorCtx != null && cachedSrcW == srcW && cachedSrcH == srcH
+                && Float.compare(cachedScale, scale) == 0 && cachedHAnchor == hAnchor && cachedVAnchor == vAnchor) {
+            return cachedAnchorCtx;
+        }
+
         int parentX = getParentX();
         int parentY = getParentY();
         int parentW = getParentWidth();
@@ -437,8 +451,19 @@ public abstract class Control implements UIElement {
         float anchorFracX = pf[2];
         float anchorFracY = pf[3];
 
-        return new float[] { (float) absX, (float) absY, (float) drawW, (float) drawH, pivotLocalX, pivotLocalY,
-                anchorFracX, anchorFracY };
+        float[] result = new float[] { (float) absX, (float) absY, (float) drawW, (float) drawH, pivotLocalX,
+                pivotLocalY, anchorFracX, anchorFracY };
+
+        // 更新缓存
+        this.cachedAnchorCtx = result;
+        this.cachedSrcW = srcW;
+        this.cachedSrcH = srcH;
+        this.cachedScale = scale;
+        this.cachedHAnchor = hAnchor;
+        this.cachedVAnchor = vAnchor;
+        this.anchorCtxDirty = false;
+
+        return result;
     }
 
     /**
@@ -756,6 +781,7 @@ public abstract class Control implements UIElement {
      */
     public void setChild(UIElement child) {
         this.child = child;
+        this.anchorCtxDirty = true;
     }
 
     /**

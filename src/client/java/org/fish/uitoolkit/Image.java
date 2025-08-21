@@ -189,15 +189,15 @@ public class Image extends Control {
                     }
 
                     if (this.clip > 0f && this.clip < 1f) {
-                        // 获取锚点整数坐标与锚点分数/绘制尺寸
-                        int[] anchorPt = getAnchorPoint(srcW, srcH, scaleToUse);
-                        int anchorX = anchorPt[0];
-                        int anchorY = anchorPt[1];
-                        float[] af = getAnchorWindowAndFrac(srcW, srcH, scaleToUse);
-                        float anchorFracX = af[2];
-                        float anchorFracY = af[3];
-                        int drawW = Math.max(1, Math.round(af[4]));
-                        int drawH = Math.max(1, Math.round(af[5]));
+                        // 统一获取锚点相关上下文（避免重复计算）
+                        float[] ctx = computeAnchorContext(srcW, srcH, scaleToUse, getHorizontalAnchor(),
+                                getVerticalAnchor());
+                        int anchorX = Math.round(ctx[0] + ctx[4]);
+                        int anchorY = Math.round(ctx[1] + ctx[5]);
+                        float anchorFracX = ctx[6];
+                        float anchorFracY = ctx[7];
+                        int drawW = Math.max(1, Math.round(ctx[2]));
+                        int drawH = Math.max(1, Math.round(ctx[3]));
 
                         // 计算要保留的像素大小，使用基类 computeKeepSizes
                         int[] keep = computeKeepSizes(drawW, drawH, this.clip, this.clipAxis);
