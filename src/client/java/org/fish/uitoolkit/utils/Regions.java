@@ -11,7 +11,7 @@ public class Regions {
             new Identifier("uitoolkit", "textures/gui/widgets-sheet.png"), 0, 0, 16, 16, TEXTURE_W, TEXTURE_H)
             .withInsets(4);
     public static final TextureRegion WIDGET_PROGRESS_BORDER = new TextureRegion(
-            new Identifier("uitoolkit", "textures/gui/widgets-sheet.png"), 16, 0, 176, 16, TEXTURE_W, TEXTURE_H);
+            new Identifier("uitoolkit", "textures/gui/widgets-sheet.png"), 16, 0, 181, 5, TEXTURE_W, TEXTURE_H);
     public static final TextureRegion WIDGET_PROGRESS_FILL = new TextureRegion(
-            new Identifier("uitoolkit", "textures/gui/widgets-sheet.png"), 16, 16, 176, 16, TEXTURE_W, TEXTURE_H);
+            new Identifier("uitoolkit", "textures/gui/widgets-sheet.png"), 16, 5, 181, 5 , TEXTURE_W, TEXTURE_H);
 }

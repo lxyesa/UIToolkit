@@ -3,13 +3,14 @@ package org.fish.uitoolkit;
 import org.fish.uitoolkit.utils.Regions;
 import org.fish.uitoolkit.utils.TextureRegion;
 
-import net.minecraft.client.gui.DrawContext;
+import net.minecraft.text.Text;
 
-public class Progress extends Control {
+public class Progress extends Container {
     protected float value = 0.0f;
     protected float maxValue = 1.0f;
-    protected final Image borderImage;
-    protected final Image fillImage;
+    protected Image borderImage;
+    protected Image fillImage;
+    protected Label label;
 
     /**
      * 创建一个新的进度条控件。
@@ -18,10 +19,18 @@ public class Progress extends Control {
      */
     public Progress(Object owner) {
         super(owner);
+        this.owner = owner;
+
         borderImage = new Image(this, Regions.WIDGET_PROGRESS_BORDER);
         borderImage.setDrawMode(Image.DrawMode.SCALE);
         fillImage = new Image(this, Regions.WIDGET_PROGRESS_FILL);
         fillImage.setDrawMode(Image.DrawMode.SCALE);
+        label = new Label(this, "");
+        label.setFontSize(5);
+        label.setVisible(false);
+
+        this.clearBackground();
+        this.propagateInvalidateChildren();
     }
 
     /**
@@ -32,7 +41,7 @@ public class Progress extends Control {
      */
     public Progress(Object owner, float value) {
         this(owner);
-        setValue(value);
+        this.value = Math.max(0.0f, Math.min(value, maxValue));
     }
 
     /**
@@ -44,8 +53,9 @@ public class Progress extends Control {
      */
     public Progress(Object owner, float value, float maxValue) {
         this(owner);
-        setValue(value);
-        setMaxValue(maxValue);
+        this.value = Math.max(0.0f, Math.min(value, maxValue));
+        this.maxValue = Math.max(0.0f, maxValue);
+        updateFillImage();
     }
 
     /**
@@ -57,8 +67,11 @@ public class Progress extends Control {
      * @param scale    缩放比例，默认为 1.0f。
      */
     public Progress(Object owner, float value, float maxValue, float scale) {
-        this(owner, value, maxValue);
-        setScale(scale);
+        this(owner);
+        this.value = Math.max(0.0f, Math.min(value, maxValue));
+        this.maxValue = Math.max(0.0f, maxValue);
+        updateFillImage();
+        this.setScale(scale);
     }
 
     /**
@@ -72,11 +85,51 @@ public class Progress extends Control {
     }
 
     /**
+     * 设置进度条的标题文本。
+     * 
+     * @param header 标题文本，若为 null 或空字符串则隐藏标题。
+     */
+    public void setHeader(String header) {
+        if (label != null) {
+            label.setText(header);
+            label.setVerticalAnchor(VAnchor.MIDDLE);
+            label.setHorizontalAnchor(HAnchor.CENTER);
+            label.setVisible(header != null && !header.isEmpty());
+
+            this.propagateInvalidateChildren();
+        }
+    }
+
+    /**
+     * 设置进度条的标题文本。
+     * 
+     * @param header 标题文本，若为 null 或空字符串则隐藏标题。
+     */
+    public void setHeader(Text header) {
+        if (label != null) {
+            label.setText(header);
+            label.setVisible(header != null && !header.getString().isEmpty());
+        }
+    }
+
+    public void setFontSize(int size) {
+        if (label != null) {
+            label.setFontSize(size);
+            this.propagateInvalidateChildren();
+        }
+    }
+
+    /**
      * 更新填充图像的剪裁比例。
      */
     protected void updateFillImage() {
+        if (fillImage == null)
+            return;
         float clip = maxValue > 0 ? value / maxValue : 0.0f;
-        fillImage.setClip(clip);
+        try {
+            fillImage.setClip(clip);
+        } catch (Throwable ignored) {
+        }
     }
 
     /**
@@ -111,8 +164,12 @@ public class Progress extends Control {
      * @param scale 缩放比例，默认为 1.0f。
      */
     public void setScale(float scale) {
-        borderImage.setScale(scale);
-        fillImage.setScale(scale);
+        if (borderImage != null) {
+            borderImage.setScale(scale);
+        }
+        if (fillImage != null) {
+            fillImage.setScale(scale);
+        }
     }
 
     /**
@@ -121,8 +178,10 @@ public class Progress extends Control {
      * @param region 填充图像的纹理区域。
      */
     public void setProgressFillImage(TextureRegion region) {
-        fillImage.setBackground(region);
-        updateFillImage();
+        if (fillImage != null) {
+            fillImage.setBackground(region);
+            updateFillImage();
+        }
     }
 
     /**
@@ -131,20 +190,13 @@ public class Progress extends Control {
      * @param region 边框图像的纹理区域。
      */
     public void setProgressBorderImage(TextureRegion region) {
-        borderImage.setBackground(region);
+        if (borderImage != null) {
+            borderImage.setBackground(region);
+        }
     }
 
     @Override
-    public void setMargins(int left, int top, int right, int bottom) {
-        super.setMargins(left, top, right, bottom);
-        borderImage.setMargins(left, top, right, bottom);
-        fillImage.setMargins(left, top, right, bottom);
-    }
-
-    @Override
-    protected void renderContent(DrawContext context, int absX, int absY, int mouseX, int mouseY, float delta) {
-        super.renderContent(context, absX, absY, mouseX, mouseY, delta);
-        borderImage.render(context, mouseX, mouseY, delta);
-        fillImage.render(context, mouseX, mouseY, delta);
+    public void setBackgroundColor(int r, int g, int b, int a) {
+        fillImage.setBackgroundColor(r, g, b, a);
     }
 }

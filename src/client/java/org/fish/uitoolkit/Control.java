@@ -11,11 +11,11 @@ import com.mojang.blaze3d.systems.RenderSystem;
  * Control: 基础控件类，保存 owner 引用并在构造时将自己注册到 owner（如果 owner 支持的话）。
  */
 public abstract class Control implements UIElement {
-
+    // ---------- ownership & hierarchy ----------
     protected Object owner;
-    protected Object child; // 用于存储单个子控件（如果有）
+    protected Object child;
 
-    // 缓存用于锚点/缩放位置计算的上下文，和失效标志
+    // ---------- anchor/scale cache & helper context ----------
     protected static final class AnchorContext {
         public int absX;
         public int absY;
@@ -39,7 +39,7 @@ public abstract class Control implements UIElement {
     private int cachedParentH = Integer.MIN_VALUE;
     private boolean anchorCtxDirty = true;
 
-    // 基础控件属性：位置、锚点、margin、可见性
+    // ---------- layout: position, anchors, margins, visibility, size ----------
     protected int x = 0;
     protected int y = 0;
     protected HAnchor hAnchor = HAnchor.LEFT;
@@ -48,7 +48,6 @@ public abstract class Control implements UIElement {
     protected int marginRight = 0;
     protected int marginTop = 0;
     protected int marginBottom = 0;
-    // 相对边距（百分比，基于父内容宽度/高度）；NaN 表示未设置（使用绝对像素）
     protected float marginLeftRel = Float.NaN;
     protected float marginRightRel = Float.NaN;
     protected float marginTopRel = Float.NaN;
@@ -57,16 +56,60 @@ public abstract class Control implements UIElement {
     protected int width;
     protected int height;
 
-    // Background texture (from a texture atlas) and source rectangle in the atlas
+    // ---------- background / nine-slice / tinting ----------
     protected Identifier background = null;
-    protected int bgU = 0; // source x in texture atlas
-    protected int bgV = 0; // source y in texture atlas
-    protected int bgWidth = 0; // source width
-    protected int bgHeight = 0; // source height
-    protected int textureWidth = 256; // atlas width (default common size)
-    protected int textureHeight = 256; // atlas height
-    protected float bgAlpha = 1.0f; // background alpha (0..1)
+    protected int bgU = 0;
+    protected int bgV = 0;
+    protected int bgWidth = 0;
+    protected int bgHeight = 0;
+    protected int textureWidth = 256;
+    protected int textureHeight = 256;
+    protected float bgAlpha = 1.0f;
     protected org.fish.uitoolkit.utils.TextureRegion bgRegion = null;
+    protected float bgTintR = 1f;
+    protected float bgTintG = 1f;
+    protected float bgTintB = 1f;
+    protected float bgTintA = 1f;
+    protected float bgSaturation = 1f;
+    protected float bgBrightness = 1f;
+
+    // ---------- content clipping (scissor) ----------
+    protected boolean contentClipEnabled = false;
+    protected float contentClipFraction = 1.0f;
+    protected ClipAxis contentClipAxis = ClipAxis.HORIZONTAL;
+
+    /**
+     * 启用或禁用子内容裁剪，并设置裁剪比例与轴向。
+     *
+     * @param enabled  是否启用裁剪
+     * @param fraction 裁剪比例（0..1）
+     * @param axis     裁剪轴向
+     */
+    public void setContentClip(boolean enabled, float fraction, ClipAxis axis) {
+        this.contentClipEnabled = enabled;
+        this.contentClipFraction = Math.max(0f, Math.min(1f, fraction));
+        if (axis != null)
+            this.contentClipAxis = axis;
+    }
+
+    /** 清除内容裁剪（恢复不裁剪） */
+    public void clearContentClip() {
+        this.contentClipEnabled = false;
+        this.contentClipFraction = 1.0f;
+        this.contentClipAxis = ClipAxis.HORIZONTAL;
+    }
+
+    public boolean isContentClipEnabled() {
+        return this.contentClipEnabled;
+    }
+
+    public float getContentClipFraction() {
+        return this.contentClipFraction;
+    }
+
+    public ClipAxis getContentClipAxis() {
+        return this.contentClipAxis;
+    }
 
     /**
      * 九宫格（9-slice）缩放策略。该枚举决定在控件目标尺寸与源图片（裁剪后）尺寸不一致时
@@ -126,6 +169,50 @@ public abstract class Control implements UIElement {
         return new int[] { keepW, keepH };
     }
 
+    /**
+     * 计算当前控件基于 absX/absY 的裁剪矩形：返回 { clipX, clipY, clipW, clipH }
+     */
+    private int[] computeClipRect(int absX, int absY) {
+        int w = getWidth();
+        int h = getHeight();
+        int clipW = w;
+        int clipH = h;
+        int clipX = absX;
+        int clipY = absY;
+        float frac = Math.max(0f, Math.min(1f, this.contentClipFraction));
+        switch (this.contentClipAxis) {
+            case HORIZONTAL:
+                clipW = Math.max(0, Math.round(w * frac));
+                break;
+            case VERTICAL:
+                clipH = Math.max(0, Math.round(h * frac));
+                break;
+            case BOTH:
+                clipW = Math.max(0, Math.round(w * frac));
+                clipH = Math.max(0, Math.round(h * frac));
+                break;
+        }
+        return new int[] { clipX, clipY, clipW, clipH };
+    }
+
+    /**
+     * 在启用 scissor 的上下文中执行给定动作（Runnable）。
+     * 该方法会基于当前控件状态计算裁剪矩形、开启 scissor、运行动作并在 finally 中关闭 scissor。
+     */
+    private void withClip(DrawContext context, int absX, int absY, Runnable action) {
+        int[] rect = computeClipRect(absX, absY);
+        int clipX = rect[0];
+        int clipY = rect[1];
+        int clipW = rect[2];
+        int clipH = rect[3];
+        context.enableScissor(clipX, clipY, clipX + clipW, clipY + clipH);
+        try {
+            action.run();
+        } finally {
+            context.disableScissor();
+        }
+    }
+
     /** 当前使用的九宫格缩放模式（默认：MINIMUM）。 */
     private NineSliceScaleMode nineSliceMode = NineSliceScaleMode.MINIMUM;
 
@@ -140,6 +227,9 @@ public abstract class Control implements UIElement {
      * 若不希望上限，可保留 Integer.MAX_VALUE。
      */
     private int nineSliceMaxPx = Integer.MAX_VALUE;
+
+    /** 生命周期标记：当 initialize() 被调用时置为 true。用于避免在构造期间立即依赖父容器的尺寸/状态。 */
+    protected boolean initialized = false;
 
     public Control() {
         this(null);
@@ -640,6 +730,7 @@ public abstract class Control implements UIElement {
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         if (!isVisible())
             return;
+        // 统一渲染流水线：先计算位置/锚点等，再渲染背景，最后渲染内容（子控件）
         int parentX = getParentX();
         int parentY = getParentY();
         int parentW = getParentWidth();
@@ -647,6 +738,57 @@ public abstract class Control implements UIElement {
         int absX = getAnchoredX(parentX, parentY, parentW, parentH) + getLocalX();
         int absY = getAnchoredY(parentX, parentY, parentW, parentH) + getLocalY();
 
+        renderPosition(context, absX, absY, mouseX, mouseY, delta);
+    }
+
+    /**
+     * 渲染到指定的绝对位置（不重新计算锚点/父控件位置）。
+     *
+     * 该重载用于在父控件修改了锚点但子控件没有随动的情形，可由父控件
+     * 在新的绝对位置上直接调用子控件的该方法以保证子控件按期望位置绘制。
+     *
+     * @param context 渲染上下文F
+     * @param absX    背景绘制的绝对 X（像素）
+     * @param absY    背景绘制的绝对 Y（像素）
+     * @param mouseX  鼠标 X（像素）
+     * @param mouseY  鼠标 Y（像素）
+     * @param delta   渲染插值
+     */
+    public void render(DrawContext context, int absX, int absY, int mouseX, int mouseY, float delta) {
+        if (!isVisible())
+            return;
+        renderPosition(context, absX, absY, mouseX, mouseY, delta);
+    }
+
+    /**
+     * 渲染流水线中的位置/背景/内容阶段的聚合方法。
+     * 子类如果只想修改某一阶段，可覆写相应的子方法（如 renderBackground 或 renderContent），
+     * 并保持其他阶段由基类执行，从而保证渲染顺序的一致性。
+     */
+    protected void renderPosition(DrawContext context, int absX, int absY, int mouseX, int mouseY, float delta) {
+        // 裁剪阶段被封装为 renderWithClip，子类可覆写 renderWithClip 或 renderInsideClip
+        renderWithClip(context, absX, absY, mouseX, mouseY, delta);
+    }
+
+    /**
+     * 裁剪封装：如果启用了 content-clip，则在这里开启 scissor，并调用
+     * {@link #renderInsideClip} 执行实际的被裁剪渲染；否则直接调用 {@link #renderInsideClip}。
+     *
+     * 可被子类覆写以修改裁剪策略（例如使用不同的坐标变换或额外缓冲）。
+     */
+    protected void renderWithClip(DrawContext context, int absX, int absY, int mouseX, int mouseY, float delta) {
+        if (this.contentClipEnabled) {
+            withClip(context, absX, absY, () -> renderInsideClip(context, absX, absY, mouseX, mouseY, delta));
+        } else {
+            renderInsideClip(context, absX, absY, mouseX, mouseY, delta);
+        }
+    }
+
+    /**
+     * 实际在裁剪区域内执行的渲染：默认行为是渲染背景然后渲染内容。
+     * 子类若需修改被裁剪区域内的渲染顺序或内容，可覆写此方法。
+     */
+    protected void renderInsideClip(DrawContext context, int absX, int absY, int mouseX, int mouseY, float delta) {
         renderBackground(context, absX, absY, getWidth(), getHeight());
         renderContent(context, absX, absY, mouseX, mouseY, delta);
     }
@@ -663,8 +805,39 @@ public abstract class Control implements UIElement {
      */
     protected void renderContent(DrawContext context, int absX, int absY, int mouseX, int mouseY, float delta) {
         if (this.child == null)
-            return;
-        ((Control) this.child).renderContent(context, absX, absY, mouseX, mouseY, delta);
+            return; // Early return if no child exists
+        // If content clipping is enabled, compute clip rect and apply scissor while
+        // rendering children
+        if (this.contentClipEnabled) {
+            int w = getWidth();
+            int h = getHeight();
+            int clipW = w;
+            int clipH = h;
+            int clipX = absX;
+            int clipY = absY;
+            float frac = Math.max(0f, Math.min(1f, this.contentClipFraction));
+            switch (this.contentClipAxis) {
+                case HORIZONTAL:
+                    clipW = Math.max(0, Math.round(w * frac));
+                    break;
+                case VERTICAL:
+                    clipH = Math.max(0, Math.round(h * frac));
+                    break;
+                case BOTH:
+                    clipW = Math.max(0, Math.round(w * frac));
+                    clipH = Math.max(0, Math.round(h * frac));
+                    break;
+            }
+            // enable scissor for the computed rectangle in screen coords
+            context.enableScissor(clipX, clipY, clipX + clipW, clipY + clipH);
+            try {
+                ((Control) this.child).render(context, absX, absY, mouseX, mouseY, delta);
+            } finally {
+                context.disableScissor();
+            }
+        } else {
+            ((Control) this.child).render(context, absX, absY, mouseX, mouseY, delta);
+        }
     }
 
     /**
@@ -687,6 +860,104 @@ public abstract class Control implements UIElement {
         this.bgHeight = h;
         this.textureWidth = texW;
         this.textureHeight = texH;
+    }
+
+    /**
+     * 设置背景颜色（RGBA），值范围 0..255。
+     * 
+     * @param r 红
+     * @param g 绿
+     * @param b 蓝
+     * @param a 透明度
+     */
+    public void setBackgroundColor(int r, int g, int b, int a) {
+        this.bgTintR = Math.max(0f, Math.min(1f, r / 255f));
+        this.bgTintG = Math.max(0f, Math.min(1f, g / 255f));
+        this.bgTintB = Math.max(0f, Math.min(1f, b / 255f));
+        this.bgTintA = Math.max(0f, Math.min(1f, a / 255f));
+    }
+
+    /**
+     * 设置背景颜色的饱和度乘数。1.0 = 不变，0 = 灰度，>1 = 增强饱和度。
+     * 值会在渲染时应用到当前的 bgTintRGB 上。
+     *
+     * @param sat 饱和度乘数（建议范围 0..2）
+     */
+    public void setBackgroundSaturation(float sat) {
+        if (Float.isNaN(sat))
+            return;
+        this.bgSaturation = Math.max(0f, sat);
+    }
+
+    /** 获取当前背景饱和度乘数 */
+    public float getBackgroundSaturation() {
+        return this.bgSaturation;
+    }
+
+    /** 设置背景亮度乘数（1.0 = 不变，>1 更亮，0 = 黑） */
+    public void setBackgroundBrightness(float b) {
+        if (Float.isNaN(b))
+            return;
+        this.bgBrightness = Math.max(0f, b);
+    }
+
+    /** 获取当前背景亮度乘数 */
+    public float getBackgroundBrightness() {
+        return this.bgBrightness;
+    }
+
+    /**
+     * Helper: convert RGB (0..1) to HSV (h:0..1, s:0..1, v:0..1)
+     */
+    protected static float[] rgbToHsv(float r, float g, float b) {
+        float max = Math.max(r, Math.max(g, b));
+        float min = Math.min(r, Math.min(g, b));
+        float v = max;
+        float delta = max - min;
+        float s = max == 0f ? 0f : delta / max;
+        float h = 0f;
+        if (delta != 0f) {
+            if (max == r) {
+                h = (g - b) / delta;
+            } else if (max == g) {
+                h = 2f + (b - r) / delta;
+            } else {
+                h = 4f + (r - g) / delta;
+            }
+            h /= 6f;
+            if (h < 0f)
+                h += 1f;
+        }
+        return new float[] { h, s, v };
+    }
+
+    /**
+     * Helper: convert HSV (h:0..1, s:0..1, v:0..1) back to RGB (0..1)
+     */
+    protected static float[] hsvToRgb(float h, float s, float v) {
+        if (s <= 0f) {
+            return new float[] { v, v, v };
+        }
+        h = (h % 1f) * 6f;
+        int i = (int) Math.floor(h);
+        float f = h - i;
+        float p = v * (1f - s);
+        float q = v * (1f - s * f);
+        float t = v * (1f - s * (1f - f));
+        switch (i) {
+            case 0:
+                return new float[] { v, t, p };
+            case 1:
+                return new float[] { q, v, p };
+            case 2:
+                return new float[] { p, v, t };
+            case 3:
+                return new float[] { p, q, v };
+            case 4:
+                return new float[] { t, p, v };
+            default:
+                return new float[] { v, p, q };
+        }
     }
 
     /**
@@ -778,7 +1049,9 @@ public abstract class Control implements UIElement {
             if (drawW <= 0 || drawH <= 0)
                 return;
             RenderSystem.enableBlend();
-            RenderSystem.setShaderColor(1f, 1f, 1f, localBgAlpha);
+            // combine background alpha and tint alpha
+            float effectiveA = localBgAlpha * this.bgTintA;
+            RenderSystem.setShaderColor(this.bgTintR, this.bgTintG, this.bgTintB, effectiveA);
 
             int srcW = localBgWidth > 0 ? localBgWidth : drawW;
             int srcH = localBgHeight > 0 ? localBgHeight : drawH;
@@ -891,6 +1164,27 @@ public abstract class Control implements UIElement {
     public void setChild(UIElement child) {
         this.child = child;
         this.anchorCtxDirty = true;
+    }
+
+    /**
+     * 初始化钩子：在控件被添加到 UI 并准备好使用时调用一次。子类可覆盖。
+     * 默认实现仅设置 initialized 标志并对单个 child 进行递归初始化（若 child 为 Control）。
+     */
+    @Override
+    public void initialize() {
+        if (this.initialized)
+            return;
+        this.initialized = true;
+        if (this.child instanceof UIElement) {
+            ((UIElement) this.child).initialize();
+        }
+    }
+
+    /**
+     * 返回控件是否已初始化。
+     */
+    public boolean isInitialized() {
+        return this.initialized;
     }
 
     /**

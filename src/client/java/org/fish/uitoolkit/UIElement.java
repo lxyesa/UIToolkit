@@ -48,6 +48,28 @@ public interface UIElement {
         render(context, getX(), getY(), delta);
     }
 
+    /**
+     * 渲染重载：接受父容器提供的绝对 origin（absX, absY），以及鼠标坐标。
+     *
+     * Container 的实现会将自身的绝对坐标作为 absX/absY 传入子元素以避免
+     * 子元素重复计算锚点。在接口中提供默认实现以保证向后兼容：
+     * 默认实现会忽略 absX/absY，直接委托到旧的 render(context, mouseX, mouseY, delta)。
+     *
+     * 实现者（尤其是实现 Control 的类）可以重写该方法以使用 absX/absY
+     * 作为父容器原点进行精确定位。
+     *
+     * @param context 渲染上下文
+     * @param absX    父容器的绝对 X（窗口坐标）
+     * @param absY    父容器的绝对 Y（窗口坐标）
+     * @param mouseX  鼠标 X（窗口坐标）
+     * @param mouseY  鼠标 Y（窗口坐标）
+     * @param delta   渲染插值
+     */
+    default void render(DrawContext context, int absX, int absY, int mouseX, int mouseY, float delta) {
+        // backward-compatible default: delegate to the simple render method
+        render(context, mouseX, mouseY, delta);
+    }
+
     // --- 常用输入事件（均提供默认 no-op / false 返回，以便实现者按需覆写） ---
 
     default boolean mouseClicked(double mouseX, double mouseY, int button) {
@@ -77,20 +99,20 @@ public interface UIElement {
     // --- 布局 / 可见性 / 尺寸（默认值为 0 / 可见），实现者可覆盖以返回真实值 ---
 
     default int getX() {
-    // 默认实现：使用更高效的 getAnchoredX，避免每帧分配临时数组
-    int parentX = getParentX();
-    int parentY = getParentY();
-    int parentW = getParentWidth();
-    int parentH = getParentHeight();
-    return getAnchoredX(parentX, parentY, parentW, parentH) + getLocalX();
+        // 默认实现：使用更高效的 getAnchoredX，避免每帧分配临时数组
+        int parentX = getParentX();
+        int parentY = getParentY();
+        int parentW = getParentWidth();
+        int parentH = getParentHeight();
+        return getAnchoredX(parentX, parentY, parentW, parentH) + getLocalX();
     }
 
     default int getY() {
-    int parentX = getParentX();
-    int parentY = getParentY();
-    int parentW = getParentWidth();
-    int parentH = getParentHeight();
-    return getAnchoredY(parentX, parentY, parentW, parentH) + getLocalY();
+        int parentX = getParentX();
+        int parentY = getParentY();
+        int parentW = getParentWidth();
+        int parentH = getParentHeight();
+        return getAnchoredY(parentX, parentY, parentW, parentH) + getLocalY();
     }
 
     /**
@@ -116,6 +138,8 @@ public interface UIElement {
             return ((Canvas) owner).getContentX();
         if (owner instanceof Panel)
             return ((Panel) owner).getX();
+        if (owner instanceof UIElement)
+            return ((UIElement) owner).getX();
         return 0;
     }
 
@@ -125,6 +149,8 @@ public interface UIElement {
             return ((Canvas) owner).getContentY();
         if (owner instanceof Panel)
             return ((Panel) owner).getY();
+        if (owner instanceof UIElement)
+            return ((UIElement) owner).getY();
         return 0;
     }
 
@@ -134,6 +160,8 @@ public interface UIElement {
             return ((Canvas) owner).getContentWidth();
         if (owner instanceof Panel)
             return ((Panel) owner).getWidth();
+        if (owner instanceof UIElement)
+            return ((UIElement) owner).getWidth();
         return 0;
     }
 
@@ -143,6 +171,8 @@ public interface UIElement {
             return ((Canvas) owner).getContentHeight();
         if (owner instanceof Panel)
             return ((Panel) owner).getHeight();
+        if (owner instanceof UIElement)
+            return ((UIElement) owner).getHeight();
         return 0;
     }
 

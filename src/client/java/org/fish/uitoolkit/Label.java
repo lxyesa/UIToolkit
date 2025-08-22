@@ -6,15 +6,19 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.text.Text;
 
 /**
- * 可渲染的文本标签，使用 {@link DrawContext#drawText} 绘制文本。
- * 支持颜色、阴影、居中、锚点与 margin。
+ * 渲染文本的控件。使用 {@link DrawContext#drawText} 绘制文本，
+ * 支持颜色、阴影、水平居中、以及可调整的字体像素高度。
  */
 public class Label extends Control {
 
     private Text text;
     private int color = 0xFFFFFFFF;
     private boolean shadow = true;
-    private boolean centered = false; // 水平居中
+    private boolean centered = false;
+    /** 目标字体像素高度 */
+    private float fontSize = 9f;
+    /** 缩放倍率 = fontSize / TextRenderer.fontHeight */
+    private float fontScale = 1.0f;
 
     /**
      * 创建一个新的标签控件。
@@ -36,6 +40,52 @@ public class Label extends Control {
     public Label(Object owner, Text text) {
         super(owner);
         this.text = text != null ? text : Text.empty();
+    }
+
+    /**
+     * 设置目标字体高度（像素）。此方法接受浮点数以支持精细缩放。
+     * 当 {@link MinecraftClient#textRenderer} 可用时会根据其 base fontHeight 计算内部缩放比例，
+     * 否则会延迟计算到首次渲染/测量时。
+     *
+     * @param size 像素高度，必须大于 0
+     */
+    public void setFontSize(float size) {
+        if (size <= 0f)
+            return;
+        this.fontSize = size;
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client != null && client.textRenderer != null) {
+            int base = client.textRenderer.fontHeight > 0 ? client.textRenderer.fontHeight : 9;
+            this.fontScale = this.fontSize / (float) base;
+        } else {
+            this.fontScale = 1.0f;
+        }
+        this.invalidateAnchorContext();
+    }
+
+    /**
+     * 延迟计算并同步内部 fontScale（在 textRenderer 可用时）。
+     */
+    private void ensureFontScale() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client != null && client.textRenderer != null) {
+            int base = client.textRenderer.fontHeight > 0 ? client.textRenderer.fontHeight : 9;
+            float computed = this.fontSize / (float) base;
+            if (Float.compare(computed, this.fontScale) != 0) {
+                this.fontScale = computed;
+                // 改变字体缩放后可能影响布局
+                this.invalidateAnchorContext();
+            }
+        }
+    }
+
+    /**
+     * 获取当前目标字体高度（像素）。
+     *
+     * @return 字体像素高度
+     */
+    public float getFontSize() {
+        return this.fontSize;
     }
 
     /**
@@ -102,24 +152,47 @@ public class Label extends Control {
         if (tr == null)
             return;
 
+        // 确保在渲染时使用最新的 fontScale（可能在 setFontSize 时 textRenderer 不可用）
+        ensureFontScale();
+        // 计算缩放后的宽度/位置
+        float scale = this.fontScale > 0f ? this.fontScale : 1.0f;
+        int rawWidth = tr.getWidth(text);
+        int scaledWidth = Math.round(rawWidth * scale);
         int drawX = getX();
         int drawY = getY();
         if (centered) {
-            int textWidth = tr.getWidth(text);
-            drawX = drawX - textWidth / 2;
+            drawX = drawX - scaledWidth / 2;
         }
-        context.drawText(tr, text, drawX, drawY, color, shadow);
+
+        if (scale == 1.0f) {
+            context.drawText(tr, text, drawX, drawY, color, shadow);
+        } else {
+            // 使用矩阵缩放来绘制缩放后的文本；坐标需要反向缩放以补偿全局缩放
+            context.getMatrices().push();
+            context.getMatrices().scale(scale, scale, scale);
+            try {
+                context.drawText(tr, text, Math.round(drawX / scale), Math.round(drawY / scale), color, shadow);
+            } finally {
+                context.getMatrices().pop();
+            }
+        }
     }
 
     @Override
     public int getWidth() {
+        ensureFontScale();
         TextRenderer tr = MinecraftClient.getInstance().textRenderer;
-        return tr != null ? tr.getWidth(text) : 0;
+        if (tr == null)
+            return 0;
+        return Math.round(tr.getWidth(text) * this.fontScale);
     }
 
     @Override
     public int getHeight() {
+        ensureFontScale();
         TextRenderer tr = MinecraftClient.getInstance().textRenderer;
-        return tr != null ? tr.fontHeight : 9;
+        if (tr == null)
+            return Math.round(9 * this.fontScale);
+        return Math.max(1, Math.round(tr.fontHeight * this.fontScale));
     }
 }

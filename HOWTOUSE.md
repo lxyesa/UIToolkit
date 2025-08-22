@@ -1,431 +1,708 @@
-## UIToolkit — API 文档
+## UIToolkit 使用说明
 
-下面为仓库 `UIToolkit`（包 `org.fish.uitoolkit`）中常用的公共 API 汇总、说明与示例，方便在模组中引用和复用。
+本说明文件包含当前库中三个核心类的目的说明与源码（或源码摘要）：
 
-> 说明：文档基于仓库源码摘录整理，覆盖主要控件类、接口与示例。若需更详细的签名或未列出的成员，请告知我将进一步展开。
+- `src/client/java/org/fish/uitoolkit/Control.java`：基础控件类，包含锚点、布局、背景绘制、九宫格与裁剪支持。
+- `src/client/java/org/fish/uitoolkit/Container.java`：支持子控件管理的容器，负责子控件生命周期、布局缓存失效与内边距计算。
+- `src/client/java/org/fish/uitoolkit/Image.java`：图像控件，支持多种绘制模式（拉伸、平铺、等比缩放、九宫格、填充、居中），并实现了平铺缓存与按锚点的裁剪绘制。
 
-## 快速构建与运行
+下面先给出每个类的简要说明与关键点，然后附上相应的源码（或源码摘要）。
 
-在 Windows PowerShell 下：
+---
 
-```powershell
-./gradlew build
-./gradlew runClient
-Copy-Item -Path .\build\libs\*.jar -Destination "$env:APPDATA\.minecraft\mods\"
-```
+## Control.java — 概要
 
-## 包概览
+`Control` 是控件层级的基类（实现 `UIElement`），负责：
 
-包名：`org.fish.uitoolkit`
+- ownership 与层级引用（owner/child）。
+- 锚点/缩放/布局缓存（避免每帧重复计算）。
+- 本地坐标、锚点（水平/垂直）、边距、可见性、宽高。
+- 背景纹理信息与九宫格、色相/饱和度/亮度/透明度等 tint 参数。
+- 内容裁剪（scissor）与按需裁剪轴向控制。
+- Nine-slice 缩放策略（NONE/PROPORTIONAL/MINIMUM/CLAMPED）以及 min/max 限制。
+- 提供一组用于按锚点计算、缩放并按锚点绘制纹理的辅助方法（computeAnchorContext、drawTextureAtAnchorScaled 等）。
+- 渲染流水线分阶段（位置/背景/内容），支持子类覆盖单个阶段（renderBackground/renderContent）。
 
-主要类型（高层）：
-
-- `UIElement` — 基础接口，定义渲染、输入与生命周期回调。
-- `Control` — 抽象基类，提供位置、锚点、margin、背景绘制（9-slice 支持）等公共行为。
-- `Container` — 支持子元素管理的容器控件（继承自 `Control`）。
-- `Canvas` — 顶层渲染画布（继承自 `Container`），适合作为根节点，支持全屏自动尺寸与事件分发。
-- `Panel` — 简单面板容器，方便创建固定位置/尺寸的容器。
-- `Label` — 文本标签控件，基于 Minecraft 的 `TextRenderer` 绘制文本。
-- `RichTextBlock` — 富文本块，支持多行、格式化追加、按文本查找并设置匹配片段颜色。
-
-另外还有工具类和资源定义（例如 `org.fish.uitoolkit.utils.TextureRegion`、`Regions`）。
-
-## 详细 API 摘要
-
-注意：下列方法签名采用源码中出现的常用形式进行描述；某些重载或辅助方法在示例中未逐一列出。
-
-### UIElement
-
-概念：最小契约，任何可渲染 / 接收输入的元素都应实现该接口。
-
-主要成员（默认/可覆写）：
-
-- enum HAnchor { LEFT, CENTER, RIGHT }
-- enum VAnchor { TOP, MIDDLE, BOTTOM }
-- void render(DrawContext context, int mouseX, int mouseY, float delta)
-- default void tick()
-- default void onRemoved()
-- 输入事件（可覆写）：
-	- boolean mouseClicked(double mx, double my, int button)
-	- boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY)
-	- boolean mouseScrolled(double mouseX, double mouseY, double amount)
-	- boolean keyPressed(int keyCode, int scanCode, int modifiers)
-	- boolean charTyped(char codePoint, int modifiers)
-- 位置 / 尺寸相关（默认实现可从 owner 推断）：
-	- int getLocalX(), getLocalY()
-	- int getWidth(), getHeight()
-	- boolean isVisible()
-	- Object getOwner()
-	- int getParentX(), getParentY(), getParentWidth(), getParentHeight()
-
-### Control (抽象)
-
-用途：实现 `UIElement` 的基础控件，封装位置、锚点、margin、背景绘制与子控件链（部分控件使用单子控件）。
-
-常用字段（实现细节）：
-
-- protected Object owner
-- protected int x, y, width, height
-- protected HAnchor hAnchor; protected VAnchor vAnchor
-- protected int marginLeft, marginTop, marginRight, marginBottom
-- private Identifier background; // 纹理资源
-- NineSliceScaleMode: NONE, PROPORTIONAL, MINIMUM, CLAMPED
-
-常用方法：
-
-- Control(Object owner) — 构造并（当 owner 支持时）注册到 owner。
-- void setPosition(int x, int y)
-- void setMargins(int left, int top, int right, int bottom)
-- void setMargins(int all)
-- void setVisible(boolean v)
-- void setBackground(Identifier id, int u, int v, int w, int h, int texW, int texH)
-	（源码中还有基于 TextureRegion / Regions 的便捷设定）
-- void render(DrawContext context, int mouseX, int mouseY, float delta)
-	- 默认实现会在可见时计算绝对位置、先绘制背景（renderBackground）再绘制内容（renderContent）。
-- protected void renderContent(DrawContext context, int absX, int absY, int mouseX, int mouseY, float delta)
-- protected void renderBackground(DrawContext context, int x, int y, int width, int height)
-
-九宫格（9-slice）相关：
-
-- NineSliceScaleMode 枚举控制角/边的缩放策略。Control 提供最小/最大像素限制与模式选择。
-
-注意：Control 实现中对异常进行了防护（绘制时捕获 Throwable），以提高在不完整资源时的鲁棒性。
-
-### Container
-
-功能：支持子元素集合管理与按顺序绘制。
-
-主要方法：
-
-- void setPadding(int left, int top, int right, int bottom)
-- void setPadding(int pad)
-- int getPaddingLeft()/getPaddingRight()/getPaddingTop()/getPaddingBottom()
-- public boolean removeChild(UIElement child)
-- public void clearChildren()
-- public List<UIElement> getChildren() — 返回只读视图
-- protected void renderContent(...) — 遍历 children 并调用它们的 render
-
-Container 在宽高未手动设置时，会使用内部的 computeAutoWidth/computeAutoHeight 策略自动计算尺寸（源码实现可查阅 `Container.java`）。
-
-### Canvas
-
-用途：顶层画布（继承自 Container），常用于注册到 HUD 渲染回调并绘制 UI。
-
-关键方法：
-
-- Canvas() — 构造时会根据窗口设置初始尺寸
-- void updateSizeFromWindow() — 将画布大小更新为 Minecraft 窗口的 scaled 大小（适配 DPI）
-- int getContentX(), getContentY(), getContentWidth(), getContentHeight()
-- Canvas addChild(UIElement child) — 连式 API，返回 this
-- void render(DrawContext context, int mouseX, int mouseY, float delta) — 渲染所有顶层子元素
-- 事件分发与生命周期：mouseDragged / mouseScrolled / keyPressed / charTyped / tick / onRemoved
-
-示例（在客户端初始化时注册 HUD 回调并渲染）：
+下为在仓库中的源码摘要（部分方法以省略号表示，详见源码文件）：
 
 ```java
-Canvas canvas = new Canvas();
-Panel panel = new Panel(canvas);
-Label label = new Label(panel, "Hello, UIToolkit!");
-label.setColor(0xFF00FF00);
-panel.addChild(label);
-// 在 HudRenderCallback 中：
-// canvas.updateSizeFromWindow();
-// canvas.render(context, mouseX, mouseY, tickDelta);
-```
+package org.fish.uitoolkit;
 
-### Panel
+import net.minecraft.client.gui.DrawContext;
+import net.minecraft.util.Identifier;
 
-简单容器。构造器：
+import org.fish.uitoolkit.utils.TextureRegion;
 
-- Panel(Object owner)
-- Panel(Object owner, int x, int y, int width, int height)
+import com.mojang.blaze3d.systems.RenderSystem;
 
-Panel 默认按添加顺序渲染子元素，事件分发从后向前（后添加的元素优先接收事件）。
+/**
+ * Control: 基础控件类，保存 owner 引用并在构造时将自己注册到 owner（如果 owner 支持的话）。
+ */
+public abstract class Control implements UIElement {
+    // ---------- ownership & hierarchy ----------
+    protected Object owner;
+    protected Object child;
 
-### Label
+    // ---------- anchor/scale cache & helper context ----------
+    protected static final class AnchorContext {…}
 
-文本标签控件，使用 Minecraft 的 TextRenderer 绘制文本。
+    private AnchorContext cachedAnchorCtx = null;
+    private int cachedSrcW = 0;
+    private int cachedSrcH = 0;
+    private float cachedScale = 0f;
+    private HAnchor cachedHAnchor = null;
+    private VAnchor cachedVAnchor = null;
+    private int cachedParentX = Integer.MIN_VALUE;
+    private int cachedParentY = Integer.MIN_VALUE;
+    private int cachedParentW = Integer.MIN_VALUE;
+    private int cachedParentH = Integer.MIN_VALUE;
+    private boolean anchorCtxDirty = true;
 
-构造与常用 API：
+    // ---------- layout: position, anchors, margins, visibility, size ----------
+    protected int x = 0;
+    protected int y = 0;
+    protected HAnchor hAnchor = HAnchor.LEFT;
+    protected VAnchor vAnchor = VAnchor.TOP;
+    protected int marginLeft = 0;
+    protected int marginRight = 0;
+    protected int marginTop = 0;
+    protected int marginBottom = 0;
+    protected float marginLeftRel = Float.NaN;
+    protected float marginRightRel = Float.NaN;
+    protected float marginTopRel = Float.NaN;
+    protected float marginBottomRel = Float.NaN;
+    protected boolean visible = true;
+    protected int width;
+    protected int height;
 
-- Label(Object owner, String text)
-- Label(Object owner, Text text)
-- void setText(String)
-- void setText(Text)
-- Text getText()
-- void setColor(int hexARGB) // 例如 0xFFFFFFFF
-- void setShadow(boolean)
-- void setCentered(boolean)
-- void setPosition(int x, int y)
-- 覆写的尺寸/位置方法：getLocalX/Y(), getWidth(), getHeight(), getMargin*(), isVisible(), getHorizontalAnchor()/getVerticalAnchor()
+    // ---------- background / nine-slice / tinting ----------
+    protected Identifier background = null;
+    protected int bgU = 0;
+    protected int bgV = 0;
+    protected int bgWidth = 0;
+    protected int bgHeight = 0;
+    protected int textureWidth = 256;
+    protected int textureHeight = 256;
+    protected float bgAlpha = 1.0f;
+    protected org.fish.uitoolkit.utils.TextureRegion bgRegion = null;
+    protected float bgTintR = 1f;
+    protected float bgTintG = 1f;
+    protected float bgTintB = 1f;
+    protected float bgTintA = 1f;
+    protected float bgSaturation = 1f;
+    protected float bgBrightness = 1f;
 
-渲染：Label 在 renderContent 中调用 DrawContext.drawText，支持水平居中（centered）与阴影选项。
+    // ---------- content clipping (scissor) ----------
+    protected boolean contentClipEnabled = false;
+    protected float contentClipFraction = 1.0f;
+    protected ClipAxis contentClipAxis = ClipAxis.HORIZONTAL;
 
-### RichTextBlock
+    /**
+     * 启用或禁用子内容裁剪，并设置裁剪比例与轴向。
+     *
+     * @param enabled  是否启用裁剪
+     * @param fraction 裁剪比例（0..1）
+     * @param axis     裁剪轴向
+     */
+    public void setContentClip(boolean enabled, float fraction, ClipAxis axis) {…}
 
-富文本块，支持多行追加、可变参数格式追加、按文本查找并对匹配段落设置颜色。
+    /** 清除内容裁剪（恢复不裁剪） */
+    public void clearContentClip() {…}
 
-主要 API：
+    public boolean isContentClipEnabled() {…}
 
-- RichTextBlock(Object owner)
-- RichTextBlock append(String text)
-- RichTextBlock append(String fmt, Object... args) — 使用 String.format（包含安全回退策略）
-- MatchHandle find(String query) — 返回可操作匹配段的句柄
-	- MatchHandle.setColor(int hexRgb)
-- RichTextBlock clear()
-- RichTextBlock setDefaultColor(int color)
-- RichTextBlock setCentered(boolean c)
-- RichTextBlock setLineSpacing(int spacing)
-- setPosition / setMargins / setHorizontalAnchor / setVerticalAnchor（继承 Control）
-- getWidth(), getHeight(), getLocalX/Y(), getMargin*
+    public float getContentClipFraction() {…}
 
-渲染：基于 TextRenderer，按行绘制每个段（Segment），每个段可单独设置颜色。
+    public ClipAxis getContentClipAxis() {…}
 
-示例用法：
+    /**
+     * 九宫格（9-slice）缩放策略。该枚举决定在控件目标尺寸与源图片（裁剪后）尺寸不一致时
+     * 如何计算角与边在目标上的像素厚度（dst 大小）。
+     */
+    public enum NineSliceScaleMode { NONE, PROPORTIONAL, MINIMUM, CLAMPED }
+
+    public enum ClipAxis { HORIZONTAL, VERTICAL, BOTH }
+
+    protected int[] computeKeepSizes(int drawW, int drawH, float clip, ClipAxis axis) {…}
+
+    private int[] computeClipRect(int absX, int absY) {…}
+
+    private void withClip(DrawContext context, int absX, int absY, Runnable action) {…}
+
+    private NineSliceScaleMode nineSliceMode = NineSliceScaleMode.MINIMUM;
+    private int nineSliceMinPx = 1;
+    private int nineSliceMaxPx = Integer.MAX_VALUE;
+    protected boolean initialized = false;
+
+    public Control() { this(null); }
+
+    public Control(Object owner) {…}
+
+    @Override public Object getOwner() {…}
+    public void setOwner(Object owner) {…}
+    protected void invalidateAnchorContext() {…}
+    public void setPosition(int x, int y) {…}
+    public void setSize(int width, int height) {…}
+    public void setHorizontalAnchor(HAnchor a) {…}
+    public void setVerticalAnchor(VAnchor a) {…}
+    public void setMargins(int left, int top, int right, int bottom) {…}
+    public void setMarginLeft(int px) {…}
+    public void setMarginRight(int px) {…}
+    public void setMarginTop(int px) {…}
+    public void setMarginBottom(int px) {…}
+    public void setMargins(int all) {…}
+    public void setMarginsRelative(float leftPct, float topPct, float rightPct, float bottomPct) {…}
+    public void setMarginLeftPercent(float pct) {…}
+    public void setMarginRightPercent(float pct) {…}
+    public void setMarginTopPercent(float pct) {…}
+    public void setMarginBottomPercent(float pct) {…}
+    public void setVisible(boolean v) {…}
+    @Override public int getLocalX() {…}
+    @Override public int getLocalY() {…}
+    @Override public boolean isVisible() {…}
+    @Override public HAnchor getHorizontalAnchor() {…}
+    @Override public VAnchor getVerticalAnchor() {…}
+    @Override public int getMarginLeft() {…}
+    @Override public int getMarginRight() {…}
+    @Override public int getMarginTop() {…}
+    @Override public int getMarginBottom() {…}
+    @Override public int getWidth() {…}
+    @Override public int getHeight() {…}
+    public int getCenterX() {…}
+    public int getCenterY() {…}
+    public int[] getCenter() {…}
+    public int[] getAnchorBasedCenter(int srcW, int srcH, float scale) {…}
+    protected AnchorContext getAnchorWindowAndFrac(int srcW, int srcH, float scale) {…}
+    protected AnchorContext computeAnchorContext(int srcW, int srcH, float scale, HAnchor hAnchor, VAnchor vAnchor) {…}
+    public int[] getAnchorPoint(int srcW, int srcH, float scale) {…}
+    protected void drawTextureAtAnchorScaled(DrawContext context, Identifier id, int srcU, int srcV, int srcW, int srcH, float scale, int textureW, int textureH) {…}
+    protected void drawTextureAtAnchorScaled(DrawContext context, Identifier id, int srcU, int srcV, int srcW, int srcH, float scale, int textureW, int textureH, HAnchor hAnchor, VAnchor vAnchor) {…}
+    @Override public void render(DrawContext context, int mouseX, int mouseY, float delta) {…}
+    public void render(DrawContext context, int absX, int absY, int mouseX, int mouseY, float delta) {…}
+    protected void renderPosition(DrawContext context, int absX, int absY, int mouseX, int mouseY, float delta) {…}
+    protected void renderWithClip(DrawContext context, int absX, int absY, int mouseX, int mouseY, float delta) {…}
++}
++```
+
+---
+
+## Container.java — 概要与源码
+
+`Container` 继承自 `Control`，管理子元素（`UIElement`）列表。关键点：
+
+- 子控件的添加/移除/清空与只读视图 `getChildren()`。
+- 当子结构或容器属性（位置、尺寸、padding）变化时，递归通知子控件失效其锚点缓存。
+- 支持基于子元素计算自动宽/高（computeAutoWidth/computeAutoHeight），考虑子项的 local 坐标与 margin。
+- renderContent 中以容器内容区（减去 padding）为原点计算并渲染子控件。
+
+源码（完整）：
 
 ```java
-RichTextBlock rt = new RichTextBlock(panel);
-rt.append("Hello %s", playerName);
-rt.append("This contains UIToolkit");
-rt.find("UIToolkit").setColor(0xFFFF0000);
-panel.addChild(rt);
+package org.fish.uitoolkit;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import net.minecraft.client.gui.DrawContext;
+
+/**
+ * Container：支持子控件管理的控件基类（继承自 Control）。
+ */
+public class Container extends Control {
+
+    private final List<UIElement> children = new ArrayList<>();
+    private final List<UIElement> childrenView = Collections.unmodifiableList(children);
+    private int paddingLeft = 0;
+    private int paddingRight = 0;
+    private int paddingTop = 0;
+    private int paddingBottom = 0;
+
+    public Container() { super(); }
+
+    public Container(Object owner) { super(owner); }
+
+    public Container addChild(UIElement child) {
+        if (child != null)
+            children.add(child);
+        if (child instanceof Control) {
+            ((Control) child).invalidateAnchorContext();
+            if (this instanceof Control && ((Control) this).isInitialized()) {
+                ((UIElement) child).initialize();
+            }
+        }
+        return this;
+    }
+
+    public boolean removeChild(UIElement child) {
+        boolean r = children.remove(child);
+        if (r) {
+            if (child instanceof Control) {
+                ((Control) child).invalidateAnchorContext();
+            }
+        }
+        return r;
+    }
+
+    public void clearChildren() { children.clear(); }
+
+    public List<UIElement> getChildren() { return childrenView; }
+
+    public void setPadding(int left, int top, int right, int bottom) {
+        this.paddingLeft = left;
+        this.paddingTop = top;
+        this.paddingRight = right;
+        this.paddingBottom = bottom;
+        propagateInvalidateChildren();
+    }
+
+    public void setPadding(int pad) { setPadding(pad, pad, pad, pad); }
+
+    protected void propagateInvalidateChildren() {
+        for (UIElement child : children) {
+            if (child instanceof Control) {
+                ((Control) child).invalidateAnchorContext();
+            }
+            if (child instanceof Container) {
+                ((Container) child).propagateInvalidateChildren();
+            }
+        }
+    }
+
+    @Override
+    public void setPosition(int x, int y) {
+        super.setPosition(x, y);
+        propagateInvalidateChildren();
+    }
+
+    @Override
+    public void setSize(int width, int height) {
+        super.setSize(width, height);
+        propagateInvalidateChildren();
+    }
+
+    public int getPaddingLeft() { return paddingLeft; }
+    public int getPaddingRight() { return paddingRight; }
+    public int getPaddingTop() { return paddingTop; }
+    public int getPaddingBottom() { return paddingBottom; }
+
+    @Override
+    public int getHeight() {
+        if (height > 0) return height;
+        return computeAutoHeight();
+    }
+
+    @Override
+    public int getWidth() {
+        if (width > 0) return width;
+        return computeAutoWidth();
+    }
+
+    protected int computeAutoWidth() {
+        List<UIElement> children = getChildren();
+        if (children.isEmpty()) return paddingLeft + paddingRight;
+        int minX = Integer.MAX_VALUE;
+        int maxX = Integer.MIN_VALUE;
+        boolean any = false;
+        for (UIElement child : children) {
+            if (child == null || !child.isVisible()) continue;
+            any = true;
+            int lx = child.getLocalX() - child.getMarginLeft();
+            int rx = child.getLocalX() + child.getWidth() + child.getMarginRight();
+            if (lx < minX) minX = lx;
+            if (rx > maxX) maxX = rx;
+        }
+        if (!any) return paddingLeft + paddingRight;
+        int contentWidth = maxX - minX;
+        return contentWidth + paddingLeft + paddingRight;
+    }
+
+    protected int computeAutoHeight() {
+        List<UIElement> children = getChildren();
+        if (children.isEmpty()) return paddingTop + paddingBottom;
+        int minY = Integer.MAX_VALUE;
+        int maxY = Integer.MIN_VALUE;
+        boolean any = false;
+        for (UIElement child : children) {
+            if (child == null || !child.isVisible()) continue;
+            any = true;
+            int ty = child.getLocalY() - child.getMarginTop();
+            int by = child.getLocalY() + child.getHeight() + child.getMarginBottom();
+            if (ty < minY) minY = ty;
+            if (by > maxY) maxY = by;
+        }
+        if (!any) return paddingTop + paddingBottom;
+        int contentHeight = maxY - minY;
+        return contentHeight + paddingTop + paddingBottom;
+    }
+
+    @Override
+    public void setChild(UIElement child) { addChild(child); }
+
+    @Override
+    public void initialize() {
+        super.initialize();
+        for (UIElement child : children) {
+            if (child != null) child.initialize();
+        }
+    }
+
+    @Override
+    protected void renderContent(DrawContext context, int absX, int absY, int mouseX, int mouseY, float delta) {
+        int contentX = absX + this.paddingLeft;
+        int contentY = absY + this.paddingTop;
+        int contentW = Math.max(0, getWidth() - this.paddingLeft - this.paddingRight);
+        int contentH = Math.max(0, getHeight() - this.paddingTop - this.paddingBottom);
+
+        for (UIElement child : children) {
+            if (child == null || !child.isVisible()) continue;
+            int childAbsX = contentX;
+            int childAbsY = contentY;
+            if (child instanceof UIElement) {
+                UIElement e = (UIElement) child;
+                childAbsX = e.getAnchoredX(contentX, contentY, contentW, contentH) + e.getLocalX();
+                childAbsY = e.getAnchoredY(contentX, contentY, contentW, contentH) + e.getLocalY();
+            }
+            child.render(context, childAbsX, childAbsY, mouseX, mouseY, delta);
+        }
+    }
+
+    @Override
+    public boolean containsPoint(int px, int py) {
+        int gx = getX();
+        int gy = getY();
+        return px >= gx && py >= gy && px < gx + getWidth() && py < gy + getHeight();
+    }
+
+    @Override
+    public void tick() {
+        if (!isVisible()) return;
+        for (UIElement child : children) {
+            if (child != null) child.tick();
+        }
+    }
+
+    @Override
+    public void onRemoved() {
+        for (UIElement child : children) {
+            if (child != null) child.onRemoved();
+        }
+    }
+}
 ```
 
-## 示例：在 Fabric 客户端中初始化 UI
-
-参考 `src/client/java/org/examplea/uitoolkit/client/UitoolkitClient.java`：
-
-核心流程：
-
-1. 在客户端初始化回调中创建 `Canvas`、`Panel`、`Label` 等控件并设置属性。
-2. 在 `HudRenderCallback.EVENT.register` 回调里调用 `canvas.updateSizeFromWindow()` 与 `canvas.render(...)`。
-
-## 使用建议与注意事项
-
-- 纹理资源与九宫格：若使用带 inset 的 TextureRegion，请确保提供正确的源矩形与纹理大小（texW/texH），否则绘制可能出错。
-- 尽量在主线程（Minecraft 客户端线程）中修改 UI 状态，避免并发问题。
-- Control 的渲染会捕获异常以避免模块间渲染互相影响，但仍应在开发时确保资源路径与参数正确。
-
-
-## 逐方法 API 参考（按类）
-
-下面给出项目中主要类的每个 public 方法的签名、参数说明、返回值与要点，便于直接查阅与复制示例。
-
-### org.fish.uitoolkit.UIElement
-
-- Object getOwner()
-	- 返回：元素所属的 owner（通常为 `Canvas` 或 `Panel`），可能为 null。
-
-- void render(DrawContext context, int mouseX, int mouseY, float delta)
-	- 描述：必须实现的渲染方法，带当前缩放后的鼠标坐标与帧 delta。
-
-- default void render(DrawContext context, float delta)
-	- 描述：默认实现会以 getX()/getY() 作为 mouse 坐标调用上面的重载。
-
-- default boolean mouseClicked(double mouseX, double mouseY, int button)
-- default boolean mouseReleased(double mouseX, double mouseY, int button)
-- default boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY)
-- default boolean mouseScrolled(double mouseX, double mouseY, double amount)
-- default boolean keyPressed(int keyCode, int scanCode, int modifiers)
-- default boolean charTyped(char codePoint, int modifiers)
-	- 描述：输入事件的钩子。默认返回 false，子类根据需要覆盖并在处理后返回 true 以停止事件冒泡。
-
-- default int getX(), getY(), getLocalX(), getLocalY()
-	- 描述：位置相关访问器。`getX()/getY()` 返回绝对坐标（基于 owner 的锚点计算）；`getLocalX()/getLocalY()` 返回相对于 owner 的局部偏移，默认 0，控件通常覆盖为实际字段。
-
-- default int getWidth(), getHeight()
-	- 描述：尺寸访问器，默认返回 0，常由控件覆盖以反映背景或内容尺寸。
-
-- default HAnchor getHorizontalAnchor(), default VAnchor getVerticalAnchor()
-	- 描述：锚点（LEFT/CENTER/RIGHT / TOP/MIDDLE/BOTTOM），用于相对于父容器定位。
-
-- default int getMarginLeft()/getMarginRight()/getMarginTop()/getMarginBottom()
-	- 描述：边距（默认 0）。
-
-- default boolean containsPoint(int x, int y)
-	- 描述：判断点是否在元素包括 margin 的区域内（左闭右开）。
-
-### org.fish.uitoolkit.Control
-
-构造器与基本属性：
-
-- Control()
-- Control(Object owner)
-	- 描述：构造时若 `owner` 为 `Container`/`Control`，会尝试将自身注册为子控件（调用 `addChild` / `setChild`），注册异常被吞掉以保证鲁棒性。
-
-位置、尺寸与可见性：
-
-- void setPosition(int x, int y)
-	- 描述：设置局部偏移（getLocalX/Y 返回值）。
-
-- void setSize(int width, int height)
-	- 描述：显式设置控件大小（覆盖自动尺寸）。
-
-- void setHorizontalAnchor(HAnchor a)
-- void setVerticalAnchor(VAnchor a)
-	- 描述：设置锚点，影响 `getX()/getY()` 的计算。
-
-- void setMargins(int left, int top, int right, int bottom)
-- void setMargins(int all)
-	- 描述：设置四个方向的 margin。若 owner 提供 `invalidateLayout()` 方法，会尝试通过反射调用以触发布局刷新（静默失败）。
-
-- void setVisible(boolean v)
-	- 描述：控制可见性，render 时会检查 `isVisible()`。
-
-背景及九宫格：
-
-- void setBackground(Identifier id, int u, int v, int w, int h, int texW, int texH)
-	- 参数：纹理标识符与源矩形及纹理总大小（用于 UV 计算）。
-	- 要点：当提供完整 atlas 大小时可以正确计算 drawTexture 的 UV；若未提供，部分路径会尝试依赖 `TextureRegion` 自动填充。
-
-- void setBackground(TextureRegion region)
-	- 参数：`TextureRegion`（可包含 insets 与 atlas 大小与 alpha）。
-
-- void clearBackground()
-	- 描述：清除背景设置。
-
-- void setBackgroundAlpha(float alpha)
-	- 描述：设置背景绘制透明度（0.0–1.0）。
-
-九宫格控制：
-
-- void setNineSliceMode(NineSliceScaleMode mode)
-- void setNineSliceMinPx(int minPx)
-- void setNineSliceMaxPx(int maxPx)
-	- 描述：控制九宫格（9-slice）边角在目标区域的缩放策略与限制（枚举：NONE, PROPORTIONAL, MINIMUM, CLAMPED）。
-
-子控件与渲染钩子：
-
-- void setChild(UIElement child)
-	- 描述：为支持单子控件的 Control 设置子元素（某些 Control 用单一 child 表示内容）。
-
-- void render(DrawContext context, int mouseX, int mouseY, float delta)
-	- 描述：默认实现会在 visible 时计算绝对位置，先调用 `renderBackground` 再调用 `renderContent`。
-
-- protected void renderContent(DrawContext context, int absX, int absY, int mouseX, int mouseY, float delta)
-	- 描述：默认实现若存在单 child 则转发到 child；子类覆盖以实现自定义绘制逻辑。
-
-- protected void renderBackground(DrawContext context, int x, int y, int width, int height)
-	- 描述：负责将背景纹理（单图或带 insets 的 9-slice）绘制到目标矩形。实现中对绘制过程做了异常捕获以避免渲染期间抛出异常导致整个 HUD 崩溃。
-
-### org.fish.uitoolkit.Container
-
-- Container(), Container(Object owner)
-
-- Container addChild(UIElement child)
-	- 返回：this（链式调用）。
-	- 描述：将 child 添加到内部列表，保留添加顺序用于渲染。
-
-- boolean removeChild(UIElement child)
-- void clearChildren()
-- List<UIElement> getChildren()
-	- 描述：管理子元素的标准 API。`getChildren()` 返回不可变视图。
-
-- void setPadding(int left, int top, int right, int bottom)
-- void setPadding(int pad)
-- int getPaddingLeft()/getPaddingRight()/getPaddingTop()/getPaddingBottom()
-
-- protected int computeAutoWidth()
-- protected int computeAutoHeight()
-	- 描述：当未显式设置 width/height 时，Container 会基于子元素的 localX/Width 与 padding/margins 计算自动尺寸。
-
-- protected void renderContent(DrawContext context, int absX, int absY, int mouseX, int mouseY, float delta)
-	- 描述：按添加顺序遍历并 render 每个可见子元素。
-
-- void tick()
-- void onRemoved()
-	- 描述：生命周期钩子会遍历并转发到子元素。
-
-### org.fish.uitoolkit.Canvas
-
-- Canvas()
-	- 描述：构造时会调用 `updateSizeFromWindow()` 使画布初始尺寸与 Minecraft 窗口 scaled 尺寸一致。
-
-- void updateSizeFromWindow()
-	- 描述：读取 `MinecraftClient.getInstance().getWindow()` 的 scaled 尺寸并写入 Canvas 的 width/height。
-
-- int getWidth(), int getHeight()
-
-- void setPadding(int left, int top, int right, int bottom)
-
-- int getContentX(), getContentY(), getContentWidth(), getContentHeight()
-	- 描述：content 区域会扣除 padding，用于放置子元素的参照区域。
-
-- Canvas addChild(UIElement child)
-	- 描述：返回 Canvas 本身以便链式添加。
-
-- void render(DrawContext context, int mouseX, int mouseY, float delta)
-- void render(DrawContext context, float delta)
-	- 描述：二者分别接收缩放后的鼠标坐标或从 MinecraftClient 获取并转换原始鼠标坐标后再渲染。
-
-事件分发（按 Z 轴从上到下，后添加的子元素先接收）：
-
-- boolean mouseClicked(double mouseX, double mouseY, int button)
-- boolean mouseReleased(double mouseX, double mouseY, int button)
-- boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY)
-- boolean mouseScrolled(double mouseX, double mouseY, double amount)
-- boolean keyPressed(int keyCode, int scanCode, int modifiers)
-- boolean charTyped(char codePoint, int modifiers)
-	- 描述：这些方法会按子元素逆序查找第一个包含坐标的元素并调用对应的事件处理，若子元素返回 true 则事件停止传播。
-
-- void tick(), void onRemoved()
-	- 描述：转发到子元素。
-
-### org.fish.uitoolkit.Panel
-
-- Panel(Object owner)
-- Panel(Object owner, int x, int y, int width, int height)
-	- 描述：简单容器，常用于固定位置的分组；构造器会设置 owner 与显式位置/尺寸。
-
-### org.fish.uitoolkit.Label
-
-- Label(Object owner, String text)
-- Label(Object owner, Text text)
-	- 描述：文本标签控件，内部使用 Minecraft 的 `TextRenderer` 绘制文本。
-
-- void setText(String) / void setText(Text)
-- Text getText()
-- void setColor(int hexARGB)
-- void setShadow(boolean)
-- void setCentered(boolean)
-	- 描述：常规文本属性设置。`setCentered(true)` 会在绘制时将文本 X 向左移动半个文本宽度以实现水平居中。
-
-- getWidth(), getHeight()
-	- 描述：基于 `TextRenderer` 的测量结果返回文本尺寸（在 `getHeight()` 中若 `textRenderer` 为 null 会返回默认 9）。
-
-### org.fish.uitoolkit.RichTextBlock
-
-- RichTextBlock(Object owner)
-
-- RichTextBlock append(String text)
-- RichTextBlock append(String fmt, Object... args)
-	- 描述：向末尾追加一行文本；对带格式化参数的重载采用 `String.format(Locale.ROOT, ...)`，对异常情况提供多个安全回退策略，尽可能避免抛出异常。
-
-- MatchHandle find(String query)
-	- 返回：`MatchHandle`，用以对查找出的匹配片段进行操作（例如 `setColor(int)`）。实现细节：会在匹配处拆分 segment 并返回 match segment 的引用列表。
-
-- RichTextBlock clear(), setDefaultColor(int), setCentered(boolean), setLineSpacing(int)
-
-- getWidth(), getHeight()
-	- 描述：基于包含的行与每行的段测量字体宽高并加上 margin 得到最终尺寸。
-
-### org.fish.uitoolkit.utils.TextureRegion
-
-- TextureRegion(Identifier id, int u, int v, int w, int h)
-- TextureRegion(Identifier id, int u, int v, int w, int h, int textureW, int textureH)
-	- 描述：表示纹理图集中的子矩形；可选指定 atlas 尺寸以便准确计算 UV。
-
-- TextureRegion withInsets(int left, int top, int right, int bottom)
-- TextureRegion withInsets(int all)
-	- 描述：设置 9-slice 的 insets（以像素为单位），返回自身以便链式调用。
-
-- void tryAutoFillTextureSize()
-	- 描述：尝试通过 `MinecraftClient.getInstance().getResourceManager()` 读取资源图片并自动填充 `textureW/textureH`；静默失败时不会抛出异常。
-
-- getter: getIdentifier(), getU(), getV(), getW(), getH(), getTextureWidth(), getTextureHeight(), getAlpha(), setAlpha(float)
-
-### org.fish.uitoolkit.utils.Regions
-
-- 常量集合，例如：
-	- public static final TextureRegion WIDGET_PANEL = new TextureRegion(new Identifier("uitoolkit","textures/gui/widgets-sheet.png"),0,0,16,16,32,16).withInsets(4);
-	- 描述：为常用控件背景与图块提供预定义 `TextureRegion` 实例以便在 `Control.setBackground(TextureRegion)` 中直接使用。
+---
+
+## Image.java — 概要与源码
+
+`Image` 继承自 `Control` 并提供丰富的图像绘制模式：
+
+- DrawMode：STRETCH、TILE、SCALE、NINESLICE、FILL、CENTER。
+- 平铺（TILE）支持可选 tileWidth/tileHeight 与缓存以避免每帧重复计算。
+- SCALE 模式支持 userScale（额外缩放倍数）与 clip（裁剪比例）以及 clipAxis；支持按控件锚点进行缩放与裁剪。
+- 支持 tint（颜色/饱和度/亮度/alpha）与开启/关闭混合。
+- NINESLICE 模式委托给基类的九宫格渲染。
+
+完整源码如下：
+
+```java
+package org.fish.uitoolkit;
+
+import org.fish.uitoolkit.utils.TextureRegion;
+import net.minecraft.util.Identifier;
+
+public class Image extends Control {
+    public enum DrawMode {
+        STRETCH, // 拉伸
+        TILE, // 平铺
+        SCALE, // 等比例缩放（在指定 size 的基础上按比例缩放）
+        NINESLICE, // 使用基类的九宫格渲染
+        FILL, // 填充
+        CENTER // 居中
+    }
+
+    private DrawMode drawMode = DrawMode.STRETCH;
+    private int tileWidth = 0;
+    private int tileHeight = 0;
+    private float userScale = 1.0f;
+    private float clip = 1.0f;
+    private ClipAxis clipAxis = ClipAxis.HORIZONTAL;
+
+    private boolean tileCacheValid = false;
+    private int cachedCellW = 0;
+    private int cachedCellH = 0;
+    private Identifier cachedBackgroundId = null;
+    private int cachedSrcW = 0;
+    private int cachedSrcH = 0;
+    private int cachedBgU = 0;
+    private int cachedBgV = 0;
+    private int cachedTextureW = 0;
+    private int cachedTextureH = 0;
+
+    public void setScale(float scale) { if (scale <= 0f) this.userScale = 1.0f; else this.userScale = scale; }
+    public void setClip(float clip) { if (Float.isNaN(clip)) clip = 1.0f; this.clip = Math.max(0f, Math.min(1f, clip)); }
+    public void setClipAxis(ClipAxis axis) { if (axis != null) this.clipAxis = axis; }
+    public DrawMode getDrawMode() { return drawMode; }
+    public Image(Object owner, TextureRegion texturePath) { super(owner); setBackground(texturePath); }
+    public void setDrawMode(DrawMode mode) { this.drawMode = mode; }
+    public void setTileSize(int w, int h) { this.tileWidth = Math.max(0, w); this.tileHeight = Math.max(0, h); invalidateTileCache(); }
+
+    @Override public void setSize(int width, int height) { super.setSize(width, height); invalidateTileCache(); }
+    @Override public void setBackground(TextureRegion region) { super.setBackground(region); invalidateTileCache(); }
+    @Override public void setBackground(Identifier id, int u, int v, int w, int h, int texW, int texH) { super.setBackground(id, u, v, w, h, texW, texH); invalidateTileCache(); }
+
+    private void invalidateTileCache() { this.tileCacheValid = false; }
+
+    private void ensureTileCache() {
+        if (this.tileCacheValid) return;
+        this.cachedBackgroundId = this.background;
+        this.cachedBgU = this.bgU;
+        this.cachedBgV = this.bgV;
+        this.cachedSrcW = this.bgWidth > 0 ? this.bgWidth : 0;
+        this.cachedSrcH = this.bgHeight > 0 ? this.bgHeight : 0;
+        this.cachedTextureW = this.textureWidth;
+        this.cachedTextureH = this.textureHeight;
+        this.cachedCellW = this.tileWidth > 0 ? this.tileWidth : (this.cachedSrcW > 0 ? this.cachedSrcW : 0);
+        this.cachedCellH = this.tileHeight > 0 ? this.tileHeight : (this.cachedSrcH > 0 ? this.cachedSrcH : 0);
+        this.tileCacheValid = true;
+    }
+
+    @Override
+    protected void renderBackground(net.minecraft.client.gui.DrawContext context, int x, int y, int width, int height) {
+        if (this.bgRegion == null && this.background == null) return;
+        if (this.bgAlpha <= 0f) return;
+        try {
+            final Identifier localBackground = this.background;
+            final int localBgU = this.bgU;
+            final int localBgV = this.bgV;
+            final int localBgWidth = this.bgWidth;
+            final int localBgHeight = this.bgHeight;
+            final int localTextureW = this.textureWidth;
+            final int localTextureH = this.textureHeight;
+
+            int srcW = localBgWidth > 0 ? localBgWidth : width;
+            int srcH = localBgHeight > 0 ? localBgHeight : height;
+            if (srcW <= 0 || srcH <= 0) return;
+
+            com.mojang.blaze3d.systems.RenderSystem.enableBlend();
+            float effectiveA = this.bgAlpha * this.bgTintA;
+            float r = this.bgTintR; float g = this.bgTintG; float b = this.bgTintB;
+            float[] hsv = rgbToHsv(r, g, b);
+            hsv[1] = Math.max(0f, hsv[1] * this.bgSaturation);
+            float[] rgb = hsvToRgb(hsv[0], hsv[1], hsv[2]);
+            float br = Math.max(0f, this.bgBrightness);
+            float outR = Math.min(1f, rgb[0] * br);
+            float outG = Math.min(1f, rgb[1] * br);
+            float outB = Math.min(1f, rgb[2] * br);
+            com.mojang.blaze3d.systems.RenderSystem.setShaderColor(outR, outG, outB, effectiveA);
+
+            switch (getDrawMode()) {
+                case STRETCH:
+                    context.drawTexture(this.background, x, y, width, height, this.bgU, this.bgV, srcW, srcH, this.textureWidth, this.textureHeight);
+                    break;
+                case CENTER: {
+                    int dx = x + (width - srcW) / 2;
+                    int dy = y + (height - srcH) / 2;
+                    context.drawTexture(this.background, dx, dy, srcW, srcH, this.bgU, this.bgV, srcW, srcH, this.textureWidth, this.textureHeight);
+                    break;
+                }
+                case SCALE: {
+                    float scale = Math.min((float) width / (float) srcW, (float) height / (float) srcH);
+                    scale *= this.userScale;
+                    float scaleToUse = scale;
+                    if (this.clip <= 0f) { break; }
+
+                    if (this.clip > 0f && this.clip < 1f) {
+                        org.fish.uitoolkit.Control.AnchorContext ctx = computeAnchorContext(srcW, srcH, scaleToUse, getHorizontalAnchor(), getVerticalAnchor());
+                        int anchorX = Math.round(ctx.absX + ctx.pivotLocalX);
+                        int anchorY = Math.round(ctx.absY + ctx.pivotLocalY);
+                        float anchorFracX = ctx.anchorFracX;
+                        float anchorFracY = ctx.anchorFracY;
+                        int drawW = Math.max(1, ctx.drawW);
+                        int drawH = Math.max(1, ctx.drawH);
+
+                        int[] keep = computeKeepSizes(drawW, drawH, this.clip, this.clipAxis);
+                        int keepW = keep[0];
+                        int keepH = keep[1];
+
+                        int clipLeft = anchorX - Math.round(anchorFracX * keepW);
+                        int clipTop = anchorY - Math.round(anchorFracY * keepH);
+                        int clipRight = clipLeft + keepW;
+                        int clipBottom = clipTop + keepH;
+
+                        context.enableScissor(clipLeft, clipTop, clipRight, clipBottom);
+                        try {
+                            drawTextureAtAnchorScaled(context, this.background, this.bgU, this.bgV, srcW, srcH, scaleToUse, this.textureWidth, this.textureHeight);
+                        } finally {
+                            context.disableScissor();
+                        }
+                    } else {
+                        drawTextureAtAnchorScaled(context, this.background, this.bgU, this.bgV, srcW, srcH, scaleToUse, this.textureWidth, this.textureHeight);
+                    }
+                    break;
+                }
+                case FILL: {
+                    float scale = Math.max((float) width / (float) srcW, (float) height / (float) srcH);
+                    int drawW = Math.max(1, Math.round(srcW * scale));
+                    int drawH = Math.max(1, Math.round(srcH * scale));
+                    int dx = x + (width - drawW) / 2;
+                    int dy = y + (height - drawH) / 2;
+                    context.drawTexture(this.background, dx, dy, drawW, drawH, this.bgU, this.bgV, srcW, srcH, this.textureWidth, this.textureHeight);
+                    break;
+                }
+                case NINESLICE: {
+                    super.renderBackground(context, x, y, width, height);
+                    break;
+                }
+                case TILE: {
+                    ensureTileCache();
+                    int cellW = this.cachedCellW > 0 ? this.cachedCellW : srcW;
+                    int cellH = this.cachedCellH > 0 ? this.cachedCellH : srcH;
+                    if (cellW <= 0 || cellH <= 0) break;
+                    for (int ox = 0; ox < width; ox += cellW) {
+                        int tw = Math.min(cellW, width - ox);
+                        for (int oy = 0; oy < height; oy += cellH) {
+                            int th = Math.min(cellH, height - oy);
+                            int srcSubW = Math.min(srcW, tw);
+                            int srcSubH = Math.min(srcH, th);
+                            Identifier drawId = this.cachedBackgroundId != null ? this.cachedBackgroundId : localBackground;
+                            int drawU = this.cachedBgU != 0 ? this.cachedBgU : localBgU;
+                            int drawV = this.cachedBgV != 0 ? this.cachedBgV : localBgV;
+                            int drawTexW = this.cachedTextureW != 0 ? this.cachedTextureW : localTextureW;
+                            int drawTexH = this.cachedTextureH != 0 ? this.cachedTextureH : localTextureH;
+                            context.drawTexture(drawId, x + ox, y + oy, tw, th, drawU, drawV, srcSubW, srcSubH, drawTexW, drawTexH);
+                        }
+                    }
+                    break;
+                }
+                default:
+                    context.drawTexture(this.background, x, y, width, height, this.bgU, this.bgV, srcW, srcH, this.textureWidth, this.textureHeight);
++            }
++
++            com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
++            com.mojang.blaze3d.systems.RenderSystem.disableBlend();
++        } catch (Throwable ignored) {
++        }
++    }
++}
++```
+
+---
+
+### Control 渲染流水线与继承指南
+
+下面针对 `Control` 的渲染流水线做一个清晰的分解，说明各阶段的职责、扩展点，以及如何继承实现自定义控件。
+
+渲染流水线（概念分阶段）
+
+1. 入口：render(context, mouseX, mouseY, delta)
+   - 负责作为控件渲染的统一入口。通常由上层 UI 框架在每帧调用。
+   - 入口会计算控件在父容器中的绝对位置（基于锚点/本地坐标/父尺寸与 margin），并最终调用下列阶段。
+
+2. renderPosition(...)
+   - 负责把计算好的绝对位置传入并准备渲染环境。它是分阶段渲染的调度器。
+   - 在该阶段会先调用 `renderBackground(...)`，然后进入内容渲染阶段（带或不带裁剪）。
+
+3. renderBackground(context, absX, absY, width, height)
+   - 背景绘制阶段：绘制背景纹理、九宫格、tint 与 blend 等。子类可覆盖以实现自定义背景。
+   - 如果调用 super.renderBackground(...)，则会执行 `Control`/`Image` 等基类的背景绘制逻辑。
+
+4. renderWithClip / 内容阶段
+   - 如果启用了 content-clip（裁剪），该阶段会先计算裁剪矩形并开启 scissor（context.enableScissor），然后调用实际的内容绘制逻辑，最后关闭 scissor。
+   - 内容阶段通常由 `renderContent(context, absX, absY, mouseX, mouseY, delta)` 实现，子类重写该方法以绘制控件的前景/子元素。容器类也在此阶段递归渲染子元素。
+
+5. 清理与后处理
+   - 渲染结束后需要恢复 OpenGL 状态（例如 shader color、blend、scissor 等），基类通常会在合适位置做恢复。自定义绘制应保证在异常时也不破坏全局状态。
+
+如何正确继承并实现自定义控件（步骤与注意事项）
+
+- 选择覆盖点：
+  - 仅想改变背景：覆写 `renderBackground(...)`。
+  - 仅想在背景上绘制额外内容或前景：覆写 `renderContent(...)`。
+  - 需要完全控制渲染顺序与坐标：覆写 `renderPosition(...)` 或 `render(...)`（谨慎使用，确保调用必要的父级逻辑或维护状态）。
+
+- 在覆写方法内部的良好实践：
+  - 小心处理 null / 0 大小：在绘制前检查宽高和资源是否可用，避免触发异常。
+  - 保持 OpenGL 状态的一致性：若你修改 shader color、enableBlend、scissor 等，请在 finally 或结束处恢复初始状态（或直接调用基类的恢复逻辑）。
+  - 对于需要裁剪的子绘制，使用 `context.enableScissor(...)` / `context.disableScissor()` 与基类的剪辑计算逻辑保持一致。
+  - 当控件的布局相关属性发生变化（例如 size、margin、anchors、padding），调用 `invalidateAnchorContext()`（或容器的 `propagateInvalidateChildren()`）以确保后续渲染使用正确的缓存数据。
+  - 在构造函数中尽量不要依赖父容器的尺寸/状态，延迟到 `initialize()` 或首次 `render` 时读取。
+
+小合同（Contract） — 自定义渲染方法期望与保证（2~4 条）
+
+- 输入：DrawContext、像素坐标（absX/absY）、控件宽高、鼠标坐标、帧间插值 delta。
+- 输出：在传入的绘制矩形内提交绘制命令；不应修改父控件状态或其它控件的几何数据。
+- 错误模式：若资源缺失或尺寸非法，应安全地跳过绘制并保证不抛出未捕获异常；不要吞掉严重错误（可记录或向上抛出）。
+- 成功标准：绘制完成且恢复全局渲染状态（shader color = 1,1,1,1；blend/scissor 恢复到调用前状态）。
+
+常见边界/异常情况（及推荐应对）
+
+- 背景资源为 null：跳过背景绘制。
+- 宽高为 0 或负：跳过绘制。
+- bgAlpha <= 0：提前返回。
+- 裁剪区域计算产生超出窗口的坐标：在调用 `enableScissor` 前 clamp 到窗口范围，或依赖框架剪裁函数。
+- 多线程或初始化顺序问题：避免在构造器中访问尚未初始化的父/资源，使用 `initialize()` 钩子。
+
+示例：实现一个简单的带前景条的自定义控件（伪代码，展示覆写要点）
+
+```java
+public class ProgressBar extends Control {
+    private float progress = 0f; // 0..1
+
+    public ProgressBar(Object owner) {
+        super(owner);
+        // 不在构造器中依赖父尺寸
+    }
+
+    public void setProgress(float p) {
+        this.progress = Math.max(0f, Math.min(1f, p));
+    }
+
+    @Override
+    protected void renderBackground(DrawContext context, int absX, int absY, int width, int height) {
+        // 使用基类背景（如果有）然后绘制进度条背景块
+        super.renderBackground(context, absX, absY, width, height);
+        if (width <= 0 || height <= 0) return;
+        // 绘制一个暗色背景条（示例：假设存在一个白色 1x1 纹理可以拉伸）
+        // 注意：实际绘制 API 取决于 DrawContext，可用 drawTexture 或项目已有的填充工具。
+        int barW = Math.round(width * 0.9f);
+        int barH = Math.max(2, height / 4);
+        int bx = absX + (width - barW) / 2;
+        int by = absY + (height - barH) / 2;
+        // 伪代码：绘制背景槽
+        // context.drawTexture(WHITE_TEX, bx, by, barW, barH, ...);
+    }
+
+    @Override
+    protected void renderContent(DrawContext context, int absX, int absY, int mouseX, int mouseY, float delta) {
+        // 在背景之上绘制进度填充
+        int barW = Math.round(getWidth() * 0.9f);
+        int barH = Math.max(2, getHeight() / 4);
+        int bx = absX + (getWidth() - barW) / 2;
+        int by = absY + (getHeight() - barH) / 2;
+        int fillW = Math.max(0, Math.round(barW * this.progress));
+        if (fillW > 0) {
+            // 伪代码：绘制填充部分
+            // context.drawTexture(WHITE_TEX, bx, by, fillW, barH, ...);
+        }
+    }
+}
+```
+
+说明：示例中用到了 `super.renderBackground(...)` 来复用基类背景逻辑，并在 `renderContent(...)` 中仅负责绘制前景（不影响基类的裁剪/恢复逻辑）。真实绘制命令应使用项目中的纹理或绘制工具（示例中的 `WHITE_TEX` 只是占位）。
+
+快速检查清单（继承控件时）
+
+- [ ] 覆写点选定（background/content/position）并限制影响范围。
+- [ ] 在状态变更（size/anchor/margin）时调用 `invalidateAnchorContext()`。
+- [ ] 检查 null/0 尺寸并提前返回以避免异常。
+- [ ] 保证在异常路径中也恢复 OpenGL/渲染状态（blend/scissor/shader color）。
+
+---
+
+## 使用说明要点
+
+- 若修改 `Control`、`Container` 或 `Image` 中影响布局/锚点计算的字段（位置、padding、margin、size），请调用相应的缓存失效方法（如 `invalidateAnchorContext()` 或容器的 `propagateInvalidateChildren()`）。
+- 对于 `Image` 的平铺，使用 `setTileSize(w,h)` 并在更新背景或控件尺寸后留意缓存失效（库已处理）。
+- SCALE 模式下可通过 `setScale()` 与 `setClip()` 调整缩放/裁剪行为，裁剪框以锚点为参考定位。
+
+---

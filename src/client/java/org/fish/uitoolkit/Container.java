@@ -12,7 +12,6 @@ public class Container extends Control {
 
     private final List<UIElement> children = new ArrayList<>();
     private final List<UIElement> childrenView = Collections.unmodifiableList(children);
-    /** 内边距（padding）——移动自 Panel，作为通用容器属性 */
     private int paddingLeft = 0;
     private int paddingRight = 0;
     private int paddingTop = 0;
@@ -38,6 +37,10 @@ public class Container extends Control {
         // 新增：当有结构性变更（添加子节点）时，通知该子及其后代失效锚点缓存
         if (child instanceof Control) {
             ((Control) child).invalidateAnchorContext();
+            // 如果容器已初始化，立即调用子控件的 initialize
+            if (this instanceof Control && ((Control) this).isInitialized()) {
+                ((UIElement) child).initialize();
+            }
         }
         return this;
     }
@@ -216,15 +219,41 @@ public class Container extends Control {
         addChild(child);
     }
 
+    @Override
+    public void initialize() {
+        // ensure Control-level initialization
+        super.initialize();
+        // initialize children recursively
+        for (UIElement child : children) {
+            if (child != null)
+                child.initialize();
+        }
+    }
+
     /**
      * 容器在 renderContent 中绘制其子元素，确保已由 Control 计算好的绝对位置与裁剪生效。
      */
     @Override
     protected void renderContent(DrawContext context, int absX, int absY, int mouseX, int mouseY, float delta) {
+        // 计算容器的内容区（考虑 padding），作为子元素的父原点与尺寸
+        int contentX = absX + this.paddingLeft;
+        int contentY = absY + this.paddingTop;
+        int contentW = Math.max(0, getWidth() - this.paddingLeft - this.paddingRight);
+        int contentH = Math.max(0, getHeight() - this.paddingTop - this.paddingBottom);
+
         for (UIElement child : children) {
-            if (child != null && child.isVisible()) {
-                child.render(context, mouseX, mouseY, delta);
+            if (child == null || !child.isVisible())
+                continue;
+            // 计算子元素在内容区的绝对位置，避免子元素重复计算父级锚点
+            int childAbsX = contentX;
+            int childAbsY = contentY;
+            if (child instanceof UIElement) {
+                UIElement e = (UIElement) child;
+                // getAnchoredX/Y 返回相对于父 origin 的坐标（不含 local offset）
+                childAbsX = e.getAnchoredX(contentX, contentY, contentW, contentH) + e.getLocalX();
+                childAbsY = e.getAnchoredY(contentX, contentY, contentW, contentH) + e.getLocalY();
             }
+            child.render(context, childAbsX, childAbsY, mouseX, mouseY, delta);
         }
     }
 

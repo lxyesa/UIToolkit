@@ -161,7 +161,21 @@ public class Image extends Control {
                 return;
 
             com.mojang.blaze3d.systems.RenderSystem.enableBlend();
-            com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, this.bgAlpha);
+            // apply tint from Control.bgTint* combined with region alpha and saturation
+            float effectiveA = this.bgAlpha * this.bgTintA;
+            // apply saturation multiplier: convert to HSV, multiply S, convert back
+            float r = this.bgTintR;
+            float g = this.bgTintG;
+            float b = this.bgTintB;
+            float[] hsv = rgbToHsv(r, g, b);
+            hsv[1] = Math.max(0f, hsv[1] * this.bgSaturation);
+            float[] rgb = hsvToRgb(hsv[0], hsv[1], hsv[2]);
+            // apply brightness multiplier from Control.bgBrightness, clamp to [0,1]
+            float br = Math.max(0f, this.bgBrightness);
+            float outR = Math.min(1f, rgb[0] * br);
+            float outG = Math.min(1f, rgb[1] * br);
+            float outB = Math.min(1f, rgb[2] * br);
+            com.mojang.blaze3d.systems.RenderSystem.setShaderColor(outR, outG, outB, effectiveA);
 
             switch (getDrawMode()) {
                 case STRETCH:
