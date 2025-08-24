@@ -5,8 +5,6 @@ import org.fish.uitoolkit.v2.RenderType;
 import org.fish.uitoolkit.v2.components.BackgroundComponent;
 import org.fish.uitoolkit.v2.components.PanelComponent;
 
-import net.minecraft.client.gui.DrawContext;
-
 public class ProgressBar extends ControlObject {
     private float progress;
     // animated displayed progress (for smooth transitions)
@@ -34,6 +32,8 @@ public class ProgressBar extends ControlObject {
         fill_panel.setOrientation(PanelComponent.Orientation.HORIZONTAL);
         fill_panel.setSpacing(0);
         fill_panel.setPadding(0, 0, 0, 0);
+        fill_panel.setAutoSizeHeight(visible);
+        fill_panel.setAutoSizeWidth(visible);
 
         ControlObject left_bg = new ControlObject();
         left_bg.addComponent(new BackgroundComponent(left_bg)
@@ -98,8 +98,6 @@ public class ProgressBar extends ControlObject {
     @Override
     public void update(float tickDelta) {
         super.update(tickDelta);
-        background_panel.update(this, tickDelta);
-        fill_panel.update(this, tickDelta);
         // update animated progress towards target
         float target = Math.max(0f, Math.min(1f, this.progress));
         if (!animateEnabled || animationSpeed <= 0f) {
@@ -173,12 +171,5 @@ public class ProgressBar extends ControlObject {
 
     public float getAnimatedProgress() {
         return this.animatedProgress;
-    }
-
-    @Override
-    public void render(DrawContext context, float tickDelta) {
-        super.render(context, tickDelta);
-        background_panel.render(this, context, tickDelta);
-        fill_panel.render(this, context, tickDelta);
     }
 }

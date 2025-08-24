@@ -150,4 +150,25 @@ public class ControlObject {
     public void setParent(ControlObject p) {
         this.parent = p;
     }
+
+    /**
+     * 返回控件在屏幕坐标系中的中心 X（整型，使用当前绝对 X 和宽度计算）。
+     */
+    public int getCenterX() {
+        return getX() + getWidth() / 2;
+    }
+
+    /**
+     * 返回控件在屏幕坐标系中的中心 Y（整型，使用当前绝对 Y 和高度计算）。
+     */
+    public int getCenterY() {
+        return getY() + getHeight() / 2;
+    }
+
+    /**
+     * 返回中心坐标数组 [centerX, centerY]（方便一次性获取）。
+     */
+    public int[] getCenter() {
+        return new int[]{getCenterX(), getCenterY()};
+    }
 }
