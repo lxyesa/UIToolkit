@@ -17,8 +17,7 @@ public class Image extends Control {
     // 可选的平铺格子大小（如果不为 0 则覆盖 src 尺寸用于平铺）
     private int tileWidth = 0;
     private int tileHeight = 0;
-    // 用户指定的额外缩放倍数（默认为 1.0），用于 SCALE 模式以在自动计算的基础上放大或缩小。
-    private float userScale = 1.0f;
+    // 注意：控件级缩放已移入 Control.setScale，Image 不再保持独立的 userScale 字段。
 
     // 裁剪比例（0.0 - 完全裁剪不可见, 1.0 - 不裁剪）。仅在 DrawMode.SCALE 模式下生效。
     // 语义：在缩放后的图像上以控件中心为锚点，保留该比例大小的中心区域，其余被裁剪。
@@ -40,19 +39,6 @@ public class Image extends Control {
     private int cachedTextureH = 0;
 
     /**
-     * 在 SCALE 模式下，设置额外的缩放倍数（相对于自动计算的等比例尺寸）。
-     * 例如 setScale(1.5f) 会在自动计算的基础上放大 1.5 倍。
-     * 
-     * @param scale 缩放倍数（<=0 将被视为 1.0）
-     */
-    public void setScale(float scale) {
-        if (scale <= 0f)
-            this.userScale = 1.0f;
-        else
-            this.userScale = scale;
-    }
-
-    /**
      * 设置裁剪比例（0.0 - 1.0）。仅在 DrawMode.SCALE 时生效。
      * 小于等于 0.0 将导致不绘制背景，大于等于 1.0 将等同于不裁剪。
      */
@@ -72,6 +58,15 @@ public class Image extends Control {
 
     public DrawMode getDrawMode() {
         return drawMode;
+    }
+
+    /**
+     * 向后兼容的 setScale：转发到 Control.setScale(float)
+     * 以保证库中旧有对 Image.setScale(...) 的调用仍然生效。
+     */
+    @Override
+    public void setScale(float scale) {
+        super.setScale(scale);
     }
 
     public Image(Object owner, TextureRegion texturePath) {
@@ -190,15 +185,8 @@ public class Image extends Control {
                     break;
                 }
                 case SCALE: {
-                    // 在目标尺寸内等比例缩放（fit），然后再乘以用户设置的 userScale
-                    float scale = Math.min((float) width / (float) srcW, (float) height / (float) srcH);
-                    scale *= this.userScale;
-                    // drawW/drawH 由基类 helper 计算并绘制
-                    // 使用控件的锚点作为缩放原点（将锚点视为控件本地 (0,0)）
-                    float scaleToUse = scale;
-                    // clip <= 0: 不绘制背景；0<clip<1: 使用裁剪；clip>=1: 不裁剪
+                    float scaleToUse = Math.min((float) width / (float) srcW, (float) height / (float) srcH);
                     if (this.clip <= 0f) {
-                        // skip drawing background when fully clipped
                         break;
                     }
 

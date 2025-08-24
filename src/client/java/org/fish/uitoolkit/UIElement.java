@@ -112,7 +112,8 @@ public interface UIElement {
         int parentY = getParentY();
         int parentW = getParentWidth();
         int parentH = getParentHeight();
-        return getAnchoredY(parentX, parentY, parentW, parentH) + getLocalY();
+    // local Y is interpreted as offset from anchor upwards, so subtract
+    return getAnchoredY(parentX, parentY, parentW, parentH) - getLocalY();
     }
 
     /**
@@ -203,26 +204,6 @@ public interface UIElement {
         return VAnchor.TOP;
     }
 
-    /** 返回左侧 margin（默认 0）。 */
-    default int getMarginLeft() {
-        return 0;
-    }
-
-    /** 返回右侧 margin（默认 0）。 */
-    default int getMarginRight() {
-        return 0;
-    }
-
-    /** 返回上方 margin（默认 0）。 */
-    default int getMarginTop() {
-        return 0;
-    }
-
-    /** 返回下方 margin（默认 0）。 */
-    default int getMarginBottom() {
-        return 0;
-    }
-
     /**
      * 计算锚定位置（相对于父容器 origin 和 size），返回长度为2的数组 [x,y]。
      * 默认实现使用元素的
@@ -244,14 +225,14 @@ public interface UIElement {
         int x;
         switch (getHorizontalAnchor()) {
             case CENTER:
-                x = parentX + (parentWidth - w) / 2 + getMarginLeft() - getMarginRight();
+                x = parentX + (parentWidth - w) / 2;
                 break;
             case RIGHT:
-                x = parentX + parentWidth - w - getMarginRight();
+                x = parentX + parentWidth - w;
                 break;
             case LEFT:
             default:
-                x = parentX + getMarginLeft();
+                x = parentX;
                 break;
         }
         return x;
@@ -265,14 +246,14 @@ public interface UIElement {
         int y;
         switch (getVerticalAnchor()) {
             case MIDDLE:
-                y = parentY + (parentHeight - h) / 2 + getMarginTop() - getMarginBottom();
+                y = parentY + (parentHeight - h) / 2;
                 break;
             case BOTTOM:
-                y = parentY + parentHeight - h - getMarginBottom();
+                y = parentY + parentHeight - h;
                 break;
             case TOP:
             default:
-                y = parentY + getMarginTop();
+                y = parentY;
                 break;
         }
         return y;

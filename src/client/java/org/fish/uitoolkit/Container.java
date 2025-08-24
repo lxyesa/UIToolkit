@@ -34,6 +34,8 @@ public class Container extends Control {
     public Container addChild(UIElement child) {
         if (child != null)
             children.add(child);
+        // 通知容器子控件顺序发生变化
+        onChildrenReordered();
         // 新增：当有结构性变更（添加子节点）时，通知该子及其后代失效锚点缓存
         if (child instanceof Control) {
             ((Control) child).invalidateAnchorContext();
@@ -54,6 +56,8 @@ public class Container extends Control {
     public boolean removeChild(UIElement child) {
         boolean r = children.remove(child);
         if (r) {
+            // 通知子控件顺序已变
+            onChildrenReordered();
             // 移除子项也可能影响布局：失效其后代缓存
             if (child instanceof Control) {
                 ((Control) child).invalidateAnchorContext();
@@ -67,6 +71,8 @@ public class Container extends Control {
      */
     public void clearChildren() {
         children.clear();
+        // 通知子控件顺序已变（已清空）
+        onChildrenReordered();
     }
 
     /**
@@ -120,6 +126,68 @@ public class Container extends Control {
         propagateInvalidateChildren();
     }
 
+    /**
+     * 将缩放因子递归下发到子控件（稳健方案：子控件会以其基准尺寸为基础计算最终尺寸）。
+     */
+    public void propagateScaleToChildren(float scale) {
+        for (UIElement child : getChildren()) {
+            if (child instanceof Control) {
+                ((Control) child).setScale(scale);
+            }
+            if (child instanceof Container) {
+                ((Container) child).propagateScaleToChildren(scale);
+            }
+        }
+    }
+
+    public void clear() {
+        children.clear();
+        // 通知子控件顺序已变（已清空）
+        onChildrenReordered();
+    }
+
+    /**
+     * 强制将容器的大小设置为基于当前子控件计算的自动尺寸（包含 padding）。
+     *
+     * 该方法会使用现有的 computeAutoWidth/computeAutoHeight 逻辑来计算
+     * 基于子控件边界的内容尺寸，并调用 {@link #setSize(int,int)} 来应用。
+     * 调用 setSize 会触发必要的锚点失效与向下/向上布局传播，所以无需额外手动失效。
+     */
+    public void forceSizeToChildren() {
+        int w = computeAutoWidth();
+        int h = computeAutoHeight();
+        // setSize 会处理 baseHint 与失效传播
+        setSize(w, h);
+    }
+
+    /**
+     * 当容器内子元素的顺序发生变化时调用（例如 add/remove/clear），
+     * 默认实现会通知每个子 Control 触发其 onControlOrderInvalidated() 回调，
+     * 子类可覆盖以实现自定义行为（例如重新计算索引、触发动画等）。
+     */
+    protected void onChildrenReordered() {
+        for (UIElement child : getChildren()) {
+            if (child instanceof Control) {
+                ((Control) child).onControlOrderInvalidated();
+            }
+        }
+    }
+
+    public void clearChildrenPosition() {
+        for (UIElement child : getChildren()) {
+            ((Control) child).setPosition(0, 0);
+        }
+    }
+
+    @Override
+    public void setScale(float scale) {
+        // 设置自身尺寸
+        super.setScale(scale);
+        // 将 scale 以稳健方式下发给子控件
+        propagateScaleToChildren(scale);
+        propagateInvalidateChildren();
+    }
+
     public int getPaddingLeft() {
         return paddingLeft;
     }
@@ -166,8 +234,8 @@ public class Container extends Control {
             if (child == null || !child.isVisible())
                 continue;
             any = true;
-            int lx = child.getLocalX() - child.getMarginLeft();
-            int rx = child.getLocalX() + child.getWidth() + child.getMarginRight();
+            int lx = child.getLocalX();
+            int rx = child.getLocalX() + child.getWidth();
             if (lx < minX)
                 minX = lx;
             if (rx > maxX)
@@ -195,8 +263,8 @@ public class Container extends Control {
             if (child == null || !child.isVisible())
                 continue;
             any = true;
-            int ty = child.getLocalY() - child.getMarginTop();
-            int by = child.getLocalY() + child.getHeight() + child.getMarginBottom();
+            int ty = child.getLocalY();
+            int by = child.getLocalY() + child.getHeight();
             if (ty < minY)
                 minY = ty;
             if (by > maxY)
@@ -251,7 +319,8 @@ public class Container extends Control {
                 UIElement e = (UIElement) child;
                 // getAnchoredX/Y 返回相对于父 origin 的坐标（不含 local offset）
                 childAbsX = e.getAnchoredX(contentX, contentY, contentW, contentH) + e.getLocalX();
-                childAbsY = e.getAnchoredY(contentX, contentY, contentW, contentH) + e.getLocalY();
+                // localY is offset from parent's anchor upwards
+                childAbsY = e.getAnchoredY(contentX, contentY, contentW, contentH) - e.getLocalY();
             }
             child.render(context, childAbsX, childAbsY, mouseX, mouseY, delta);
         }

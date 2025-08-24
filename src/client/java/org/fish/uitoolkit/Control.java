@@ -4,11 +4,15 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.util.Identifier;
 
 import org.fish.uitoolkit.utils.TextureRegion;
+import org.joml.Vector2d;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 
+@Deprecated
 /**
  * Control: 基础控件类，保存 owner 引用并在构造时将自己注册到 owner（如果 owner 支持的话）。
+ *
+ * @deprecated 该类已被弃用，建议使用新的 org.fish.uitoolkit.v2 包实现。
  */
 public abstract class Control implements UIElement {
     // ---------- ownership & hierarchy ----------
@@ -44,17 +48,19 @@ public abstract class Control implements UIElement {
     protected int y = 0;
     protected HAnchor hAnchor = HAnchor.LEFT;
     protected VAnchor vAnchor = VAnchor.TOP;
-    protected int marginLeft = 0;
-    protected int marginRight = 0;
-    protected int marginTop = 0;
-    protected int marginBottom = 0;
-    protected float marginLeftRel = Float.NaN;
-    protected float marginRightRel = Float.NaN;
-    protected float marginTopRel = Float.NaN;
-    protected float marginBottomRel = Float.NaN;
     protected boolean visible = true;
     protected int width;
     protected int height;
+    /**
+     * 用户请求的缩放因子（相对于基准尺寸）。
+     */
+    protected float userScale = 1.0f;
+    /**
+     * 控件的基准尺寸提示（用于避免重复累积缩放）：当首次确定控件的自然尺寸时记录。
+     * 若为 -1 表示尚未初始化基准。
+     */
+    private int baseWidthHint = -1;
+    private int baseHeightHint = -1;
 
     // ---------- background / nine-slice / tinting ----------
     protected Identifier background = null;
@@ -270,6 +276,8 @@ public abstract class Control implements UIElement {
     public void setOwner(Object owner) {
         this.owner = owner;
         this.anchorCtxDirty = true;
+        // 当 owner 变化时，通知布局失效（向上递归到容器）
+        propagateInvalidateToOwner();
     }
 
     /**
@@ -277,6 +285,35 @@ public abstract class Control implements UIElement {
      */
     protected void invalidateAnchorContext() {
         this.anchorCtxDirty = true;
+    }
+
+    /**
+     * 将当前控件的布局/锚点失效事件向上通知到所属的容器层级，
+     * 以便触发父容器的布局失效处理（例如重新计算自动宽高、重新布局等）。
+     *
+     * 该方法保证：
+     * - 标记自身 anchorCtxDirty
+     * - 若 owner 为 Container，则调用其 propagateInvalidateChildren()
+     * - 若 owner 为 Control，则递归向上通知
+     */
+    protected void propagateInvalidateToOwner() {
+        this.anchorCtxDirty = true;
+        Object p = this.owner;
+        if (p == null)
+            return;
+        if (p instanceof Container) {
+            ((Container) p).propagateInvalidateChildren();
+        } else if (p instanceof Control) {
+            ((Control) p).propagateInvalidateToOwner();
+        }
+    }
+
+    /**
+     * 当容器内的子控件顺序发生变化时由容器调用，子类可覆盖此方法以响应重排事件（例如触发动画或重新排序内部状态）。
+     * 默认实现为空。
+     */
+    protected void onControlOrderInvalidated() {
+        // no-op: override in subclasses to react to sibling/order changes
     }
 
     /**
@@ -289,6 +326,46 @@ public abstract class Control implements UIElement {
         this.x = x;
         this.y = y;
         this.anchorCtxDirty = true;
+        propagateInvalidateToOwner();
+    }
+
+    /**
+     * 获取控件的本地坐标。
+     * 
+     * @return 控件的本地坐标 (x, y)。
+     */
+    public Vector2d getPosition() {
+        return new Vector2d(this.x, this.y);
+    }
+
+    /**
+     * 设置控件的本地坐标（使用一个 Vector2d 方便外部复用向量）。
+     * 会将内部坐标取整为整数像素并失效锚点缓存。
+     *
+     * @param pos 包含目标本地坐标的向量；若为 null 则忽略。
+     */
+    public void setLocalPosition(Vector2d pos) {
+        if (pos == null)
+            return;
+        // 将 double 转为像素整型（四舍五入）
+        this.x = (int) Math.round(pos.x);
+        this.y = (int) Math.round(pos.y);
+        this.anchorCtxDirty = true;
+        propagateInvalidateToOwner();
+    }
+
+    /**
+     * 将当前控件的本地坐标写入传入的向量并返回该向量，便于避免分配。
+     * 若传入为 null，则返回一个新分配的 Vector2d。
+     *
+     * @param out 用于接收本地坐标的向量，或 null
+     * @return 包含本地坐标的 Vector2d（等于传入的 out 或新分配的向量）
+     */
+    public Vector2d getLocalPosition(Vector2d out) {
+        if (out == null)
+            return new Vector2d(this.x, this.y);
+        out.set(this.x, this.y);
+        return out;
     }
 
     /**
@@ -300,7 +377,55 @@ public abstract class Control implements UIElement {
     public void setSize(int width, int height) {
         this.width = width;
         this.height = height;
+        // 如果尚未设置基准尺寸，则以显式设置的 size 作为基准
+        if (this.baseWidthHint < 0 && width > 0)
+            this.baseWidthHint = width;
+        if (this.baseHeightHint < 0 && height > 0)
+            this.baseHeightHint = height;
         this.anchorCtxDirty = true;
+        propagateInvalidateToOwner();
+    }
+
+    /**
+     * 按倍数缩放控件的尺寸（直接改变控件的 width/height），并失效锚点缓存。
+     * 若传入小于等于 0 的值，则视为 1.0（无缩放）。
+     *
+     * @param scale 缩放倍数
+     */
+    public void setScale(float scale) {
+        if (Float.isNaN(scale) || scale <= 0f)
+            scale = 1.0f;
+        ensureBaseSizeHint();
+        int baseW = Math.max(0, this.baseWidthHint);
+        int baseH = Math.max(0, this.baseHeightHint);
+        // 计算并设置新的尺寸（以基准为准，避免累积）
+        this.width = Math.max(0, Math.round(baseW * scale));
+        this.height = Math.max(0, Math.round(baseH * scale));
+        this.userScale = scale;
+        this.anchorCtxDirty = true;
+        propagateInvalidateToOwner();
+    }
+
+    /**
+     * 若尚未记录基准尺寸，则从当前已知信息推断并记录基准宽高（width 或 bgWidth）。
+     */
+    private void ensureBaseSizeHint() {
+        if (this.baseWidthHint < 0) {
+            if (this.width > 0)
+                this.baseWidthHint = this.width;
+            else if (this.bgWidth > 0)
+                this.baseWidthHint = this.bgWidth;
+            else
+                this.baseWidthHint = 0;
+        }
+        if (this.baseHeightHint < 0) {
+            if (this.height > 0)
+                this.baseHeightHint = this.height;
+            else if (this.bgHeight > 0)
+                this.baseHeightHint = this.bgHeight;
+            else
+                this.baseHeightHint = 0;
+        }
     }
 
     /**
@@ -311,6 +436,7 @@ public abstract class Control implements UIElement {
     public void setHorizontalAnchor(HAnchor a) {
         this.hAnchor = a;
         this.anchorCtxDirty = true;
+        propagateInvalidateToOwner();
     }
 
     /**
@@ -321,101 +447,7 @@ public abstract class Control implements UIElement {
     public void setVerticalAnchor(VAnchor a) {
         this.vAnchor = a;
         this.anchorCtxDirty = true;
-    }
-
-    /**
-     * 设置 margin（边距），用于在控件内容与其边界之间添加空白区域。
-     * 
-     * @param left   左边距
-     * @param top    上边距
-     * @param right  右边距
-     * @param bottom 下边距
-     */
-    public void setMargins(int left, int top, int right, int bottom) {
-        this.marginLeft = left;
-        this.marginTop = top;
-        this.marginRight = right;
-        this.marginBottom = bottom;
-        // 清除相对边距（以绝对像素为准）
-        this.marginLeftRel = Float.NaN;
-        this.marginTopRel = Float.NaN;
-        this.marginRightRel = Float.NaN;
-        this.marginBottomRel = Float.NaN;
-        this.anchorCtxDirty = true;
-    }
-
-    /** 设置单个绝对像素边距：左 */
-    public void setMarginLeft(int px) {
-        this.marginLeft = px;
-        this.marginLeftRel = Float.NaN;
-        this.anchorCtxDirty = true;
-    }
-
-    /** 设置单个绝对像素边距：右 */
-    public void setMarginRight(int px) {
-        this.marginRight = px;
-        this.marginRightRel = Float.NaN;
-        this.anchorCtxDirty = true;
-    }
-
-    /** 设置单个绝对像素边距：上 */
-    public void setMarginTop(int px) {
-        this.marginTop = px;
-        this.marginTopRel = Float.NaN;
-        this.anchorCtxDirty = true;
-    }
-
-    /** 设置单个绝对像素边距：下 */
-    public void setMarginBottom(int px) {
-        this.marginBottom = px;
-        this.marginBottomRel = Float.NaN;
-        this.anchorCtxDirty = true;
-    }
-
-    /**
-     * 设置统一的 margin（边距）值。
-     * 
-     * @param all 统一的边距值（左、上、右、下均相同）
-     */
-    public void setMargins(int all) {
-        setMargins(all, all, all, all);
-    }
-
-    /**
-     * 使用相对比例设置边距（以父内容区宽度/高度为基准）。
-     * 例如：setMarginsRelative(0f, 0f, 0.15f, 0.05f) 表示右侧为父宽度的 15%，底部为父高度的 5%。
-     * 值应在 0..1 范围内；使用 Float.NaN 可表示未设置（保留绝对像素）。
-     */
-    public void setMarginsRelative(float leftPct, float topPct, float rightPct, float bottomPct) {
-        this.marginLeftRel = leftPct;
-        this.marginTopRel = topPct;
-        this.marginRightRel = rightPct;
-        this.marginBottomRel = bottomPct;
-        this.anchorCtxDirty = true;
-    }
-
-    /** 设置单个相对边距（百分比，基于父内容区）：左 */
-    public void setMarginLeftPercent(float pct) {
-        this.marginLeftRel = pct;
-        this.anchorCtxDirty = true;
-    }
-
-    /** 设置单个相对边距（百分比，基于父内容区）：右 */
-    public void setMarginRightPercent(float pct) {
-        this.marginRightRel = pct;
-        this.anchorCtxDirty = true;
-    }
-
-    /** 设置单个相对边距（百分比，基于父内容区）：上 */
-    public void setMarginTopPercent(float pct) {
-        this.marginTopRel = pct;
-        this.anchorCtxDirty = true;
-    }
-
-    /** 设置单个相对边距（百分比，基于父内容区）：下 */
-    public void setMarginBottomPercent(float pct) {
-        this.marginBottomRel = pct;
-        this.anchorCtxDirty = true;
+        propagateInvalidateToOwner();
     }
 
     /**
@@ -426,6 +458,7 @@ public abstract class Control implements UIElement {
     public void setWidth(int width) {
         this.width = width;
         this.anchorCtxDirty = true;
+        propagateInvalidateToOwner();
     }
 
     /**
@@ -436,6 +469,7 @@ public abstract class Control implements UIElement {
     public void setHeight(int height) {
         this.height = height;
         this.anchorCtxDirty = true;
+        propagateInvalidateToOwner();
     }
 
     /**
@@ -450,13 +484,17 @@ public abstract class Control implements UIElement {
     public void setVisible(boolean v) {
         this.visible = v;
         this.anchorCtxDirty = true;
+        propagateInvalidateToOwner();
     }
 
     /**
-     * 显示或隐藏控件。
-     *
-     * @param v true 表示显示，false 表示隐藏
+     * 获取控件的大小。
+     * 
+     * @return 控件的大小 (width, height)。
      */
+    public Vector2d getSize() {
+        return new Vector2d(this.width, this.height);
+    }
 
     @Override
     public int getLocalX() {
@@ -483,49 +521,7 @@ public abstract class Control implements UIElement {
         return vAnchor;
     }
 
-    @Override
-    public int getMarginLeft() {
-        if (!Float.isNaN(marginLeftRel)) {
-            int parentW = getParentWidth();
-            if (parentW <= 0)
-                return marginLeft; // fallback
-            return Math.round(parentW * marginLeftRel);
-        }
-        return marginLeft;
-    }
-
-    @Override
-    public int getMarginRight() {
-        if (!Float.isNaN(marginRightRel)) {
-            int parentW = getParentWidth();
-            if (parentW <= 0)
-                return marginRight;
-            return Math.round(parentW * marginRightRel);
-        }
-        return marginRight;
-    }
-
-    @Override
-    public int getMarginTop() {
-        if (!Float.isNaN(marginTopRel)) {
-            int parentH = getParentHeight();
-            if (parentH <= 0)
-                return marginTop;
-            return Math.round(parentH * marginTopRel);
-        }
-        return marginTop;
-    }
-
-    @Override
-    public int getMarginBottom() {
-        if (!Float.isNaN(marginBottomRel)) {
-            int parentH = getParentHeight();
-            if (parentH <= 0)
-                return marginBottom;
-            return Math.round(parentH * marginBottomRel);
-        }
-        return marginBottom;
-    }
+    // getMargin* removed from Control; UIElement provides default zero margins.
 
     /**
      * 默认宽度回退：若子类未覆盖，则使用背景宽度作为控件宽度回退值。
@@ -635,7 +631,8 @@ public abstract class Control implements UIElement {
             return cachedAnchorCtx;
         }
         int absX = getAnchoredX(parentX, parentY, parentW, parentH) + getLocalX();
-        int absY = getAnchoredY(parentX, parentY, parentW, parentH) + getLocalY();
+        // localY is offset from anchor upwards
+        int absY = getAnchoredY(parentX, parentY, parentW, parentH) - getLocalY();
 
         int drawW = Math.max(1, Math.round(srcW * scale));
         int drawH = Math.max(1, Math.round(srcH * scale));
@@ -736,7 +733,7 @@ public abstract class Control implements UIElement {
         int parentW = getParentWidth();
         int parentH = getParentHeight();
         int absX = getAnchoredX(parentX, parentY, parentW, parentH) + getLocalX();
-        int absY = getAnchoredY(parentX, parentY, parentW, parentH) + getLocalY();
+        int absY = getAnchoredY(parentX, parentY, parentW, parentH) - getLocalY();
 
         renderPosition(context, absX, absY, mouseX, mouseY, delta);
     }

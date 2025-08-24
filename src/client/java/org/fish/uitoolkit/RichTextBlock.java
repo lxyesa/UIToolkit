@@ -168,9 +168,7 @@ public class RichTextBlock extends Control {
         super.setVerticalAnchor(a);
     }
 
-    public void setMargins(int left, int top, int right, int bottom) {
-        super.setMargins(left, top, right, bottom);
-    }
+    // setMargins removed; margins are not part of the control API
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
@@ -219,7 +217,7 @@ public class RichTextBlock extends Control {
             if (w > max)
                 max = w;
         }
-        return max + super.getMarginLeft() + super.getMarginRight();
+        return max;
     }
 
     @Override
@@ -230,8 +228,7 @@ public class RichTextBlock extends Control {
         int linesCount = Math.max(0, lines.size());
         if (linesCount == 0)
             return 0;
-        return linesCount * tr.fontHeight + (linesCount - 1) * lineSpacing + super.getMarginTop()
-                + super.getMarginBottom();
+        return linesCount * tr.fontHeight + (linesCount - 1) * lineSpacing;
     }
 
     // 使用 Control/默认实现提供的行为（不再冗余覆写）
