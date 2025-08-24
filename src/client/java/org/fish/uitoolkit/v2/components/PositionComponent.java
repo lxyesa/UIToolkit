@@ -6,7 +6,7 @@ import org.fish.uitoolkit.v2.interfaces.IComponent;
 /**
  * Position component manages x/y and local offset for a ControlObject.
  */
-public class PositionComponent implements IComponent {
+public class PositionComponent extends IComponent {
     private int x = 0;
     private int y = 0;
     private int localX = 0;

@@ -1,13 +1,14 @@
-package org.fish.uitoolkit.v2;
+package org.fish.uitoolkit.v2.components;
 
 import net.minecraft.client.gui.DrawContext;
 import com.mojang.blaze3d.systems.RenderSystem;
 import org.fish.uitoolkit.utils.TextureRegion;
+import org.fish.uitoolkit.v2.RenderType;
 import org.fish.uitoolkit.v2.controls.ControlObject;
 import org.fish.uitoolkit.v2.interfaces.IComponent;
 
 /** Minimal background component that can draw a TextureRegion. */
-public class Background implements IComponent {
+public class BackgroundComponent extends IComponent {
     private TextureRegion region;
     private int renderFlags = RenderType.STRETCH;
     private int tintColor = 0xFFFFFF;
@@ -21,41 +22,61 @@ public class Background implements IComponent {
         FORWARD, BACKWARD
     }
 
-    public Background() {
+    public BackgroundComponent(ControlObject owner) {
+        this.setOwner(owner);
     }
 
-    public void setTexture(TextureRegion region, int renderFlags) {
+    public IComponent setTexture(TextureRegion region, int renderFlags) {
         this.region = region;
         this.renderFlags = renderFlags;
+        return this;
     }
 
-    public void setTexture(TextureRegion region) {
+    public IComponent setTexture(TextureRegion region) {
         setTexture(region, RenderType.STRETCH);
+        return this;
     }
 
     /** ARGB color (0xRRGGBB) */
-    public void setColor(int color) {
+    public IComponent setColor(int color) {
         this.tintColor = color & 0xFFFFFF;
+        return this;
     }
 
-    public void setAlpha(float a) {
+    public IComponent setAlpha(float a) {
         if (region != null)
             region.setAlpha(a);
+        return this;
     }
 
     /**
      * 按百分比沿轴裁剪背景渲染。最小实现：仅记录裁剪，实际的剪裁操作由调用者或后续改进处理。目前仅根据百分比简单缩小尺寸。
      */
-    public void clip(float xPercent, float yPercent, ClipType clipType) {
+    public IComponent clip(float xPercent, float yPercent, ClipType clipType) {
         // 存储裁剪信息，renderBackground 在渲染时应用 scissor
         this.clipEnabled = true;
         this.clipXPercent = Math.max(0f, Math.min(1f, xPercent));
         this.clipYPercent = Math.max(0f, Math.min(1f, yPercent));
         this.clipType = clipType == null ? ClipType.FORWARD : clipType;
+        return this;
+    }
+
+    /**
+     * 更新背景组件的拥有者大小
+     */
+    public void updateOwnerSize() {
+        if (region == null)
+            return;
+        ControlObject o = getOwner();
+        if (o == null)
+            throw new IllegalStateException("Owner is not set");
+        o.setSize(region.getW(), region.getH());
     }
 
     private void renderBackground(DrawContext context, ControlObject owner) {
         if (region == null)
+            return;
+        if (!owner.getVisible())
             return;
         int x = owner.getX();
         int y = owner.getY();

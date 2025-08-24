@@ -1,74 +1,88 @@
 package org.fish.uitoolkit.v2.controls;
 
 import net.minecraft.client.gui.DrawContext;
-import org.fish.uitoolkit.utils.TextureRegion;
-import org.fish.uitoolkit.v2.Background;
 import org.fish.uitoolkit.v2.components.PanelComponent;
 import org.fish.uitoolkit.v2.components.PositionComponent;
 import org.fish.uitoolkit.v2.components.ScaleComponent;
 import org.fish.uitoolkit.v2.interfaces.IComponent;
 
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.ArrayList;
 
 /**
  * Minimal ControlObject: can hold components and basic layout properties.
  */
 public class ControlObject {
-    private final Map<Class<?>, IComponent> components = new HashMap<>();
-
+    private final Map<Class<?>, IComponent> components = new LinkedHashMap<>();
+    private final List<IComponent> cachedComponents = new ArrayList<>();
+    private boolean componentsDirty = true;
     protected boolean visible = true;
-    // parent reference for anchor calculations
     private ControlObject parent = null;
 
     public ControlObject() {
-        // ensure base components exist
         this.addComponent(new PositionComponent());
         this.addComponent(new ScaleComponent());
     }
 
-    public <T extends IComponent> T addComponent(T comp) {
+    public IComponent addComponent(IComponent comp) {
+        if (comp != null) comp.setOwner(this);
         components.put(comp.getClass(), comp);
+        componentsDirty = true;
         return comp;
     }
 
     @SuppressWarnings("unchecked")
-    public <T extends IComponent> T getComponent(Class<T> cls) {
+    public <T> T getComponent(Class<T> cls) {
         return (T) components.get(cls);
     }
 
     public void removeComponent(Class<?> cls) {
         components.remove(cls);
+        componentsDirty = true;
+    }
+
+    /**
+     * 组件更新缓存
+     */
+    private void ensureCachedComponents() {
+        if (!componentsDirty)
+            return;
+        cachedComponents.clear();
+        cachedComponents.addAll(components.values());
+        cachedComponents.sort((a, b) -> Integer.compare(a.getPriority(), b.getPriority()));
+        componentsDirty = false;
     }
 
     public void update(float tickDelta) {
-        // execute components in order of increasing priority
-        components.values().stream()
-                .sorted((a, b) -> Integer.compare(a.getPriority(), b.getPriority()))
-                .forEach(c -> {
-                    try {
-                        c.update(this, tickDelta);
-                    } catch (Throwable ignored) {
-                    }
-                });
+        ensureCachedComponents();
+        for (int i = 0, n = cachedComponents.size(); i < n; i++) {
+            IComponent c = cachedComponents.get(i);
+            try {
+                c.update(this, tickDelta);
+            } catch (Throwable ignored) {
+            }
+        }
     }
 
     public void render(DrawContext context, float tickDelta) {
         if (!visible)
             return;
-        // render components that have render implementations in priority order
-        components.values().stream()
-                .sorted((a, b) -> Integer.compare(a.getPriority(), b.getPriority()))
-                .forEach(c -> {
-                    try {
-                        c.render(this, context, tickDelta);
-                    } catch (Throwable ignored) {
-                    }
-                });
+        ensureCachedComponents();
+        for (int i = 0, n = cachedComponents.size(); i < n; i++) {
+            IComponent c = cachedComponents.get(i);
+            try {
+                c.render(this, context, tickDelta);
+            } catch (Throwable ignored) {
+            }
+        }
     }
 
-    // basic properties
+    public boolean getVisible() {
+        return this.visible;
+    }
+
     public void setPosition(int x, int y) {
         PositionComponent p = getComponent(PositionComponent.class);
         if (p != null)
@@ -111,13 +125,15 @@ public class ControlObject {
         return s != null ? s.getHeight() : 0;
     }
 
-    public void addChild(ControlObject child) {
+    public ControlObject addChild(ControlObject child) {
         PanelComponent p = getComponent(PanelComponent.class);
         if (p == null)
-            p = addComponent(new PanelComponent());
+            p = (PanelComponent) addComponent(new PanelComponent());
         p.addChild(child);
         if (child != null)
             child.setParent(this);
+
+        return this;
     }
 
     public List<ControlObject> getChildren() {
@@ -133,12 +149,5 @@ public class ControlObject {
 
     public void setParent(ControlObject p) {
         this.parent = p;
-    }
-
-    public void setBackground(TextureRegion region) {
-        Background bg = getComponent(Background.class);
-        if (bg == null)
-            bg = addComponent(new Background());
-        bg.setTexture(region);
     }
 }

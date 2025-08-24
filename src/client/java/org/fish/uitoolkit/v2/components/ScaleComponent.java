@@ -4,7 +4,7 @@ import org.fish.uitoolkit.v2.controls.ControlObject;
 import org.fish.uitoolkit.v2.interfaces.IComponent;
 
 /** Scale component now owns size and scale factor. */
-public class ScaleComponent implements IComponent {
+public class ScaleComponent extends IComponent {
     private float scale = 1f;
     private int width = 0;
     private int height = 0;

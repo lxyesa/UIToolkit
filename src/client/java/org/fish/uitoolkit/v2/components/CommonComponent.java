@@ -7,7 +7,7 @@ import org.fish.uitoolkit.v2.interfaces.IComponent;
  * @deprecated replaced by Position/Scale components. Kept as noop for compatibility.
  */
 @Deprecated
-public final class CommonComponent implements IComponent {
+public final class CommonComponent extends IComponent {
     @Override
     public void update(ControlObject owner, float tickDelta) {
         // intentionally no-op
