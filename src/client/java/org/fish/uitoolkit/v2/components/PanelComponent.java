@@ -11,14 +11,14 @@ public class PanelComponent extends IComponent {
     private final List<ControlObject> children = new ArrayList<>();
 
     public enum Orientation {
-        VERTICAL, HORIZONTAL
+        VERTICAL, HORIZONTAL, NONE
     }
 
     public enum Align {
         START, CENTER, END
     }
 
-    private Orientation orientation = Orientation.VERTICAL;
+    private Orientation orientation = Orientation.NONE;
     private Align crossAlign = Align.START; // alignment on the cross axis
     private int spacing = 2; // pixels between children
     private int paddingLeft = 0, paddingTop = 0, paddingRight = 0, paddingBottom = 0;
@@ -162,7 +162,9 @@ public class PanelComponent extends IComponent {
                 } catch (Throwable ignored) {
                 }
             }
-            if (orientation == Orientation.VERTICAL) {
+            if (orientation == Orientation.NONE) {
+                // Handle NONE orientation case
+            } else if (orientation == Orientation.VERTICAL) {
                 int y = paddingTop;
                 int availW = owner.getWidth() - paddingLeft - paddingRight;
                 for (ControlObject c : children) {
@@ -220,6 +222,8 @@ public class PanelComponent extends IComponent {
 
     @Override
     public void render(ControlObject owner, net.minecraft.client.gui.DrawContext context, float tickDelta) {
+        if (owner.getVisible() == false)
+            return;
         for (ControlObject c : children) {
             try {
                 if (c != null)

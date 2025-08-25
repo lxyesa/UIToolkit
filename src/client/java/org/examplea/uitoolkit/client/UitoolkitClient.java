@@ -40,10 +40,13 @@ public class UitoolkitClient implements ClientModInitializer {
                 var lblPos = lbl.getComponent(PositionComponent.class);
                 lblPos.setAlignment(PositionComponent.Anchor.BOTTOM_CENTER, PositionComponent.Anchor.BOTTOM_CENTER);
                 lbl.setPadding(4);
+                lbl.setOffset(0, -12);
 
                 var progressBar = new ProgressBar(5);
                 progressBar.setProgress(0.4f);
                 progressBar.setColor(0xa83291);
+
+                progressBar.setVisible(false);
 
                 root.addChild(progressBar);
                 root.addChild(lbl);

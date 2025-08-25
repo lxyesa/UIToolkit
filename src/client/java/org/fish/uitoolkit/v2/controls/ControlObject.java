@@ -57,6 +57,8 @@ public class ControlObject {
     }
 
     public void update(float tickDelta) {
+        if (!visible)
+            return;
         ensureCachedComponents();
         for (int i = 0, n = cachedComponents.size(); i < n; i++) {
             IComponent c = cachedComponents.get(i);
