@@ -27,7 +27,8 @@ public class ControlObject {
     }
 
     public IComponent addComponent(IComponent comp) {
-        if (comp != null) comp.setOwner(this);
+        if (comp != null)
+            comp.setOwner(this);
         components.put(comp.getClass(), comp);
         componentsDirty = true;
         return comp;
@@ -93,6 +94,66 @@ public class ControlObject {
         PositionComponent p = getComponent(PositionComponent.class);
         if (p != null)
             p.setLocalPosition(lx, ly);
+    }
+
+    /** Convenience: get the PositionComponent instance for this control. */
+    public PositionComponent getPositionComponent() {
+        return getComponent(PositionComponent.class);
+    }
+
+    // --- Shortcut mapping methods that delegate to PositionComponent ---
+    public void setAnchor(PositionComponent.Anchor a) {
+        PositionComponent p = getPositionComponent();
+        if (p != null)
+            p.setAnchor(a);
+    }
+
+    public void setParentAnchor(PositionComponent.Anchor a) {
+        PositionComponent p = getPositionComponent();
+        if (p != null)
+            p.setParentAnchor(a);
+    }
+
+    public void setParentAnchorNormalized(float ax, float ay) {
+        PositionComponent p = getPositionComponent();
+        if (p != null)
+            p.setParentAnchorNormalized(ax, ay);
+    }
+
+    public void clearParentAnchorNormalized() {
+        PositionComponent p = getPositionComponent();
+        if (p != null)
+            p.clearParentAnchorNormalized();
+    }
+
+    public void setPivotNormalized(float px, float py) {
+        PositionComponent p = getPositionComponent();
+        if (p != null)
+            p.setPivotNormalized(px, py);
+    }
+
+    public void clearPivotNormalized() {
+        PositionComponent p = getPositionComponent();
+        if (p != null)
+            p.clearPivotNormalized();
+    }
+
+    public void setPivotPreset(PositionComponent.Anchor a) {
+        PositionComponent p = getPositionComponent();
+        if (p != null)
+            p.setPivotPreset(a);
+    }
+
+    public void setParentAnchorPreset(PositionComponent.Anchor a) {
+        PositionComponent p = getPositionComponent();
+        if (p != null)
+            p.setParentAnchorPreset(a);
+    }
+
+    public void setAlignment(PositionComponent.Anchor parentPreset, PositionComponent.Anchor pivotPreset) {
+        PositionComponent p = getPositionComponent();
+        if (p != null)
+            p.setAlignment(parentPreset, pivotPreset);
     }
 
     public void setSize(int w, int h) {
@@ -169,6 +230,6 @@ public class ControlObject {
      * 返回中心坐标数组 [centerX, centerY]（方便一次性获取）。
      */
     public int[] getCenter() {
-        return new int[]{getCenterX(), getCenterY()};
+        return new int[] { getCenterX(), getCenterY() };
     }
 }
