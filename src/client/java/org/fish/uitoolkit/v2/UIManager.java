@@ -6,17 +6,14 @@ import net.minecraft.client.gui.DrawContext;
 
 /** Minimal UIManager that holds a root ControlObject and renders it. */
 public class UIManager {
-    private static final UIManager INSTANCE = new UIManager();
-
     private final ControlObject root = new ControlObject();
 
-    private UIManager() {
+    /**
+     * 构造一个新的 UIManager 实例（不再使用单例模式）。
+     */
+    public UIManager() {
         root.setPosition(0, 0);
         root.setSize(320, 240);
-    }
-
-    public static UIManager getInstance() {
-        return INSTANCE;
     }
 
     public ControlObject getRoot() {

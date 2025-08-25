@@ -5,7 +5,7 @@ import net.minecraft.client.MinecraftClient;
 
 /** 文本标签，用于显示文本 */
 public class Label extends ControlObject {
-    private final String text;
+    private String text;
     private float textScale = 1.0f;
     private int textColor = 0xFFFFFF;
     private int fontSizePx = 0;
@@ -27,6 +27,10 @@ public class Label extends ControlObject {
     private int paddingBottom = 2;
 
     public Label(String text) {
+        this.text = text == null ? "" : text;
+    }
+
+    public void setText(String text) {
         this.text = text == null ? "" : text;
     }
 
