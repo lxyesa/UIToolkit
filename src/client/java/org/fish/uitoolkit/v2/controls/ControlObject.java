@@ -186,6 +186,24 @@ public class ControlObject {
         return s != null ? s.getHeight() : 0;
     }
 
+    public void setOffset(int ox, int oy) {
+        PositionComponent p = getComponent(PositionComponent.class);
+        if (p != null)
+            p.setOffset(ox, oy);
+    }
+
+    public void addOffset(int dx, int dy) {
+        PositionComponent p = getComponent(PositionComponent.class);
+        if (p != null)
+            p.addOffset(dx, dy);
+    }
+
+    public void clearOffset() {
+        PositionComponent p = getComponent(PositionComponent.class);
+        if (p != null)
+            p.clearOffset();
+    }
+
     public ControlObject addChild(ControlObject child) {
         PanelComponent p = getComponent(PanelComponent.class);
         if (p == null)

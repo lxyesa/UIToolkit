@@ -87,15 +87,16 @@
 	- `List<ControlObject> getChildren()` 返回子控件（若无 PanelComponent 则返回空列表）
 	- 可见性：`void setVisible(boolean v)` / `boolean getVisible()`
 
-	便捷位置/锚点映射（委托到 `PositionComponent`）：
-		- `PositionComponent getPositionComponent()`
-		- `void setAnchor(PositionComponent.Anchor a)`
-		- `void setParentAnchor(PositionComponent.Anchor a)`
-		- `void setParentAnchorNormalized(float ax, float ay)` / `void clearParentAnchorNormalized()`
-		- `void setPivotNormalized(float px, float py)` / `void clearPivotNormalized()`
-		- `void setPivotPreset(PositionComponent.Anchor a)`
-		- `void setParentAnchorPreset(PositionComponent.Anchor a)`
-		- `void setAlignment(PositionComponent.Anchor parentPreset, PositionComponent.Anchor pivotPreset)`
+- 便捷位置/锚点映射（委托到 `PositionComponent`）：
+	- `PositionComponent getPositionComponent()`
+	- `void setAnchor(PositionComponent.Anchor a)`
+	- `void setParentAnchor(PositionComponent.Anchor a)`
+	- `void setParentAnchorNormalized(float ax, float ay)` / `void clearParentAnchorNormalized()`
+	- `void setPivotNormalized(float px, float py)` / `void clearPivotNormalized()`
+	- `void setPivotPreset(PositionComponent.Anchor a)`
+	- `void setParentAnchorPreset(PositionComponent.Anchor a)`
+	- `void setAlignment(PositionComponent.Anchor parentPreset, PositionComponent.Anchor pivotPreset)`
+
 
 备注：`ControlObject` 使用 `PositionComponent` / `ScaleComponent` 提供位置与尺寸行为。
 
